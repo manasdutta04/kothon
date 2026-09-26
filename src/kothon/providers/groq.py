@@ -86,6 +86,11 @@ class GroqClient:
             json=payload,
         )
         if response.is_error:
+            if response.status_code == 413:
+                raise RuntimeError(
+                    "Groq text request is too large (HTTP 413). "
+                    "Reduce the configured text batch size or segment duration."
+                )
             raise RuntimeError(f"Groq request failed with HTTP {response.status_code}")
         data = response.json()
         if not isinstance(data, dict):
@@ -283,11 +288,26 @@ class GroqClient:
         return parsed
 
     def segment(self, transcript: Transcript, rules: SubtitleRules) -> list[SubtitleCard]:
-        raw = self.structured_text(
-            "Return subtitle cards as strict JSON.",
-            {"transcript": transcript.model_dump(), "rules": rules.model_dump()},
-        )
-        return [SubtitleCard.model_validate(item) for item in raw.get("cards", [])]
+        segments = transcript.segments
+        cards: list[SubtitleCard] = []
+        for start in range(0, len(segments), 40):
+            raw = self.structured_text(
+                "Return subtitle cards as strict JSON. Keep source segment IDs unchanged.",
+                {
+                    "transcript": {
+                        "segments": [
+                            item.model_dump(mode="json")
+                            for item in segments[start : start + 40]
+                        ]
+                    },
+                    "rules": rules.model_dump(mode="json"),
+                },
+            )
+            cards.extend(SubtitleCard.model_validate(item) for item in raw.get("cards", []))
+        return [
+            card.model_copy(update={"card_id": f"card-{index:04d}"})
+            for index, card in enumerate(cards, start=1)
+        ]
 
     def correct(self, card: SubtitleCard, failures: object) -> CorrectionResult:
         raw = self.structured_text(

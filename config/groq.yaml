@@ -22,7 +22,7 @@ runtime:
   keep_trace: true
   transcription_chunk_seconds: 90
   transcription_overlap_seconds: 1.5
-  text_batch_size: 40
+  text_batch_size: 20
 
 output:
   formats: [srt, vtt, json]
