@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from kothon.config import KothonConfig, load_config
 from kothon.contracts import PipelineResult
@@ -119,6 +120,9 @@ def create_app() -> FastAPI:
             return Response(result.report.model_dump_json(indent=2), media_type="application/json")
         raise HTTPException(status_code=404, detail="Unknown file type")
 
+    frontend_dist = Path("frontend/dist")
+    if frontend_dist.is_dir():
+        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
     return app
 
 
