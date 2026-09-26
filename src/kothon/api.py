@@ -74,17 +74,21 @@ def create_app() -> FastAPI:
         run_id = str(uuid4())
         suffix = Path(file.filename or "upload.bin").suffix
         maximum_bytes = int(os.getenv("KOTHON_MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))
-        content = await file.read()
-        if len(content) > maximum_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail={
-                    "code": "upload_too_large",
-                    "message": f"Upload exceeds the {maximum_bytes} byte limit.",
-                },
-            )
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temporary:
-            temporary.write(content)
+            total_bytes = 0
+            while block := await file.read(1024 * 1024):
+                total_bytes += len(block)
+                if total_bytes > maximum_bytes:
+                    temporary.close()
+                    Path(temporary.name).unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "code": "upload_too_large",
+                            "message": f"Upload exceeds the {maximum_bytes} byte limit.",
+                        },
+                    )
+                temporary.write(block)
             media_path = Path(temporary.name)
         try:
             if not media_path.is_file():
