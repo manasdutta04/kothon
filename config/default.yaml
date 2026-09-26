@@ -1,0 +1,24 @@
+language_hint: bn
+
+subtitle_rules:
+  max_chars_per_line: 42
+  max_lines_per_card: 2
+  min_duration_seconds: 1.0
+  max_duration_seconds: 7.0
+  max_reading_speed_cps: 17.0
+
+providers:
+  transcription: fixture
+  segmentation: fixture
+  correction: fixture
+  tagging: fixture
+  compliance: fixture
+
+runtime:
+  max_correction_attempts: 2
+  request_timeout_seconds: 60
+  keep_trace: true
+
+output:
+  formats: [srt, vtt, json]
+
