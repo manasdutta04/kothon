@@ -7,8 +7,7 @@ RUN npm run build
 
 FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    KOTHON_CONFIG_PATH=/app/config/default.yaml
+    PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ ./src/

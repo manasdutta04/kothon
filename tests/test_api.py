@@ -61,3 +61,17 @@ def test_api_rejects_malformed_media() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "invalid_media"
+
+
+def test_fixture_result_reports_fixture_mode(monkeypatch) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    RUNS.clear()
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/runs",
+        files={"file": ("sample.wav", wav_bytes(), "audio/wav")},
+    )
+
+    run_id = response.json()["run_id"]
+    assert client.get(f"/api/runs/{run_id}/result").json()["mode"] == "fixture"
