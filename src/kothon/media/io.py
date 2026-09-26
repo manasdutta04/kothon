@@ -1,6 +1,7 @@
 """Container-aware media utilities with no model dependencies."""
 
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 
 from kothon.contracts import AudioChunk, MediaMetadata
@@ -51,6 +52,85 @@ def write_audio_chunks(
     return chunks
 
 
+def write_media_audio_chunks(
+    media_path: Path,
+    output_dir: Path,
+    *,
+    sample_rate: int = 16_000,
+    chunk_seconds: float = 90.0,
+    overlap_seconds: float = 1.5,
+) -> list[tuple[Path, float]]:
+    """Extract and chunk media incrementally without loading the full track."""
+    if sample_rate <= 0:
+        raise ValueError("sample_rate must be positive")
+    if chunk_seconds <= 0 or overlap_seconds < 0 or overlap_seconds >= chunk_seconds:
+        raise ValueError("chunk_seconds must be positive and overlap must be smaller")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    chunk_bytes = round(chunk_seconds * sample_rate * 2)
+    overlap_bytes = round(overlap_seconds * sample_rate * 2)
+    chunks: list[tuple[Path, float]] = []
+    offset = 0
+    pending = b""
+    for block in _media_pcm_blocks(media_path, sample_rate):
+        pending += block
+        while len(pending) >= chunk_bytes:
+            payload = pending[:chunk_bytes]
+            path = output_dir / f"chunk-{len(chunks) + 1:04d}.wav"
+            _write_pcm_wav(path, payload, sample_rate)
+            chunks.append((path, offset / (sample_rate * 2)))
+            offset += chunk_bytes - overlap_bytes
+            pending = pending[chunk_bytes - overlap_bytes :]
+    if pending:
+        path = output_dir / f"chunk-{len(chunks) + 1:04d}.wav"
+        _write_pcm_wav(path, pending, sample_rate)
+        chunks.append((path, offset / (sample_rate * 2)))
+    return chunks
+
+
+def _write_pcm_wav(path: Path, payload: bytes, sample_rate: int) -> None:
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(sample_rate)
+        output.writeframes(payload)
+
+
+def _media_pcm_blocks(media_path: Path, sample_rate: int) -> Iterator[bytes]:
+    if media_path.suffix.lower() == ".wav":
+        try:
+            with wave.open(str(media_path), "rb") as source:
+                while block := source.readframes(sample_rate * 4):
+                    yield block
+            return
+        except (wave.Error, EOFError) as exc:
+            raise MediaError(f"Invalid WAV media: {media_path.name}") from exc
+    try:
+        import subprocess
+
+        import imageio_ffmpeg  # type: ignore[import-untyped]
+
+        process = subprocess.Popen(
+            [
+                imageio_ffmpeg.get_ffmpeg_exe(), "-i", str(media_path), "-f", "s16le",
+                "-ac", "1", "-ar", str(sample_rate), "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert process.stdout is not None
+        while block := process.stdout.read(sample_rate * 8):
+            yield block
+        stderr = (
+            process.stderr.read().decode("utf-8", errors="replace")
+            if process.stderr
+            else ""
+        )
+        if process.wait() != 0:
+            raise MediaError(f"Unable to decode audio: {media_path.name}: {stderr[-200:]}")
+    except ImportError as exc:
+        raise MediaError("Video decoding requires the audio dependency group") from exc
+
+
 def _inspect_wav(path: Path) -> MediaMetadata:
     try:
         with wave.open(str(path), "rb") as audio:
@@ -74,7 +154,7 @@ def inspect_media(path: Path) -> MediaMetadata:
     if path.suffix.lower() == ".wav":
         return _inspect_wav(path)
     try:
-        import imageio_ffmpeg  # type: ignore[import-untyped]
+        import imageio_ffmpeg
     except ImportError as exc:
         raise MediaError("Video inspection requires the audio dependency group") from exc
     try:

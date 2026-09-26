@@ -31,6 +31,8 @@ class RuntimeConfig(BaseModel):
     max_correction_attempts: int = Field(default=2, ge=0, le=5)
     request_timeout_seconds: float = Field(default=60.0, gt=0)
     keep_trace: bool = True
+    transcription_chunk_seconds: float = Field(default=90.0, gt=10, le=180)
+    transcription_overlap_seconds: float = Field(default=1.5, ge=0, lt=10)
 
 
 class OutputConfig(BaseModel):

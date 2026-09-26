@@ -23,7 +23,7 @@ from kothon.contracts import (
     Transcript,
     TranslatedCue,
 )
-from kothon.media import read_audio, write_audio_chunks
+from kothon.media import write_media_audio_chunks
 
 
 class GroqConfigurationError(RuntimeError):
@@ -42,6 +42,8 @@ class GroqClient:
         timeout: float = 60.0,
         max_retries: int = 2,
         request_interval_seconds: float | None = None,
+        transcription_chunk_seconds: float = 90.0,
+        transcription_overlap_seconds: float = 1.5,
         client: httpx.Client | None = None,
         base_url: str = "https://api.groq.com/openai/v1",
     ) -> None:
@@ -65,6 +67,8 @@ class GroqClient:
             else request_interval_seconds
         )
         self._last_request_at = 0.0
+        self.transcription_chunk_seconds = transcription_chunk_seconds
+        self.transcription_overlap_seconds = transcription_overlap_seconds
 
     def _require(self, model: str) -> None:
         if not self.api_key:
@@ -142,9 +146,13 @@ class GroqClient:
         # locally and stitch short timestamped requests for long media so a
         # 150 MB video remains usable without local model weights.
         if media_path.stat().st_size > 24_000_000:
-            audio = read_audio(media_path)
             with tempfile.TemporaryDirectory(prefix="kothon-groq-") as directory:
-                chunks = write_audio_chunks(audio, Path(directory))
+                chunks = write_media_audio_chunks(
+                    media_path,
+                    Path(directory),
+                    chunk_seconds=self.transcription_chunk_seconds,
+                    overlap_seconds=self.transcription_overlap_seconds,
+                )
                 transcripts = [
                     self._transcribe_single(chunk_path, language_hint, offset)
                     for chunk_path, offset in chunks
@@ -314,3 +322,31 @@ class GroqClient:
         if translated.language != language:
             raise RuntimeError("Groq translation returned the wrong target language")
         return translated
+
+    def translate_batch(
+        self, cards: list[SubtitleCard], language: str
+    ) -> dict[str, TranslatedCue]:
+        """Translate a complete track in one schema-validated request."""
+        raw = self.structured_text(
+            "Translate every cue. Return strict JSON with a translations array. "
+            "Keep every cue_id exactly once, preserve meaning and code-mixing.",
+            {
+                "target_language": language,
+                "cues": [card.model_dump(mode="json") for card in cards],
+            },
+        )
+        values = raw.get("translations")
+        if not isinstance(values, list):
+            raise RuntimeError("Groq batch translation did not contain translations")
+        result: dict[str, TranslatedCue] = {}
+        for value in values:
+            translated = TranslatedCue.model_validate(value)
+            if translated.language != language:
+                raise RuntimeError("Groq batch translation returned the wrong language")
+            if translated.cue_id != translated.source_cue_id:
+                raise RuntimeError("Groq batch translation changed a cue ID")
+            result[translated.cue_id] = translated
+        expected = {card.card_id for card in cards}
+        if set(result) != expected:
+            raise RuntimeError("Groq batch translation did not return every cue exactly once")
+        return result

@@ -8,7 +8,7 @@ from kothon.contracts import AudioChunk, AudioEvidence
 def extract_evidence(
     audio: AudioChunk,
     *,
-    frame_seconds: float = 0.02,
+    frame_seconds: float = 0.25,
     activity_threshold: float = 0.015,
 ) -> list[AudioEvidence]:
     """Extract normalized energy/spectral evidence from mono PCM audio."""

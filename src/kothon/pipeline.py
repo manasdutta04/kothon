@@ -17,6 +17,7 @@ from kothon.contracts import (
     QCReport,
     SubtitleCard,
     TraceEvent,
+    TranslatedCue,
     VerificationRecord,
     Violation,
 )
@@ -58,6 +59,8 @@ def run_pipeline(
             transcription_model=config.providers.transcription_model,
             text_model=config.providers.text_model,
             timeout=config.runtime.request_timeout_seconds,
+            transcription_chunk_seconds=config.runtime.transcription_chunk_seconds,
+            transcription_overlap_seconds=config.runtime.transcription_overlap_seconds,
         )
         if groq_needed
         else None
@@ -128,7 +131,7 @@ def run_pipeline(
         {"cards": [card.model_dump(mode="json") for card in proposed]},
         segmentation_started,
     )
-    audio = read_audio(media_path)
+    audio = read_audio(media_path, sample_rate=4_000)
     audio_evidence = extract_evidence(audio)
     speaker_turns = diarize(transcription.segments, audio_evidence)
     reports: list[CardReport] = []
@@ -141,6 +144,8 @@ def run_pipeline(
     confidence_by_segment = {
         segment.segment_id: segment.confidence for segment in transcription.segments
     }
+    verification_by_card: dict[str, VerificationRecord] = {}
+    final_cards_by_id: dict[str, SubtitleCard] = {}
     for card in proposed:
         original = check_card(card, config.subtitle_rules)
         correction = None
@@ -149,12 +154,24 @@ def run_pipeline(
             correction = correction_provider.correct(card, original.model_dump(mode="json"))
             final_card = card.model_copy(update={"lines": correction.corrected_lines})
         final_check = check_card(final_card, config.subtitle_rules)
-        verification = VerificationRecord(
+        verification_by_card[card.card_id] = VerificationRecord(
             original=original,
             correction=correction,
             final=final_check,
             verified=final_check.violations == [Violation.NONE],
         )
+        final_cards_by_id[card.card_id] = final_card
+    final_cards_for_batch = list(final_cards_by_id.values())
+    translation_cache: dict[str, dict[str, TranslatedCue]] = {}
+    if isinstance(translation_provider, GroqClient):
+        for language in translated:
+            translation_cache[language] = translation_provider.translate_batch(
+                final_cards_for_batch, language
+            )
+    for card in proposed:
+        final_card = final_cards_by_id[card.card_id]
+        verification = verification_by_card[card.card_id]
+        original = verification.original
         compliance = compliance_provider.analyze(final_card)
         matching_turns = [
             turn for turn in speaker_turns
@@ -276,7 +293,11 @@ def run_pipeline(
                 affected_tracks=["bn", "en", "hi"],
             ))
         for language in translated:
-            translation = translation_provider.translate(final_card, language)
+            translation = (
+                translation_cache[language][final_card.card_id]
+                if language in translation_cache
+                else translation_provider.translate(final_card, language)
+            )
             translated[language].append(translation.lines[0])
             if translation.translation_confidence < 0.7:
                 issues.append(QCIssue(

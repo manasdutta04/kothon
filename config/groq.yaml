@@ -20,6 +20,8 @@ runtime:
   max_correction_attempts: 2
   request_timeout_seconds: 60
   keep_trace: true
+  transcription_chunk_seconds: 90
+  transcription_overlap_seconds: 1.5
 
 output:
   formats: [srt, vtt, json]

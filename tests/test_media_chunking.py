@@ -2,7 +2,7 @@ import wave
 from pathlib import Path
 
 from kothon.contracts import AudioChunk
-from kothon.media import write_audio_chunks
+from kothon.media import write_audio_chunks, write_media_audio_chunks
 
 
 def test_audio_chunks_have_overlap_and_pcm_wav_headers(tmp_path: Path) -> None:
@@ -25,3 +25,22 @@ def test_audio_chunks_have_overlap_and_pcm_wav_headers(tmp_path: Path) -> None:
         assert handle.getnchannels() == 1
         assert handle.getframerate() == 10
         assert handle.getsampwidth() == 2
+
+
+def test_media_chunking_reads_wav_incrementally(tmp_path: Path) -> None:
+    source = tmp_path / "source.wav"
+    with wave.open(str(source), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(10)
+        handle.writeframes((b"\x00\x00") * 40)
+
+    chunks = write_media_audio_chunks(
+        source,
+        tmp_path / "chunks",
+        sample_rate=10,
+        chunk_seconds=2,
+        overlap_seconds=0.2,
+    )
+
+    assert [round(offset, 1) for _, offset in chunks] == [0.0, 1.8, 3.6]
