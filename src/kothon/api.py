@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from kothon.config import KothonConfig, load_config
+from kothon.config import KothonConfig, load_runtime_config
 from kothon.contracts import PipelineResult
 from kothon.media import MediaError
 from kothon.pipeline import run_pipeline
@@ -21,12 +21,7 @@ RUNS: dict[str, Any] = {}
 
 
 def runtime_config() -> KothonConfig:
-    configured = os.getenv("KOTHON_CONFIG_PATH")
-    if configured:
-        return load_config(Path(configured))
-    if os.getenv("GROQ_API_KEY"):
-        return load_config(Path("config/groq.yaml"))
-    return load_config(Path("config/default.yaml"))
+    return load_runtime_config()
 
 
 def create_app() -> FastAPI:

@@ -1,5 +1,6 @@
 """Runtime configuration for Kothon."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -47,3 +48,13 @@ def load_config(path: Path) -> KothonConfig:
     """Load and validate a YAML configuration file."""
     raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return KothonConfig.model_validate(raw)
+
+
+def load_runtime_config() -> KothonConfig:
+    """Select explicit, Groq, or fixture configuration for local execution."""
+    configured = os.getenv("KOTHON_CONFIG_PATH")
+    if configured:
+        return load_config(Path(configured))
+    if os.getenv("GROQ_API_KEY"):
+        return load_config(Path("config/groq.yaml"))
+    return load_config(Path("config/default.yaml"))
