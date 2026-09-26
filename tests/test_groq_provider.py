@@ -14,7 +14,11 @@ def test_missing_groq_key_fails_without_network_call() -> None:
 
 
 def test_structured_text_validates_provider_response() -> None:
+    requested_path = ""
+
     def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requested_path
+        requested_path = request.url.path
         assert request.headers["authorization"] == "Bearer test-key"
         return httpx.Response(
             200,
@@ -29,6 +33,7 @@ def test_structured_text_validates_provider_response() -> None:
     )
 
     assert client.structured_text("system", {"value": 1}) == {"ok": True}
+    assert requested_path == "/openai/v1/chat/completions"
 
 
 def test_structured_text_retries_transient_provider_failure() -> None:

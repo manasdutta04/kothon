@@ -42,7 +42,7 @@ class GroqClient:
         timeout: float = 60.0,
         max_retries: int = 2,
         client: httpx.Client | None = None,
-        base_url: str = "https://api.groq.com/openai",
+        base_url: str = "https://api.groq.com/openai/v1",
     ) -> None:
         self.api_key: str = (
             os.getenv("GROQ_API_KEY", "") if api_key is None else api_key
