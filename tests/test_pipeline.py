@@ -14,6 +14,10 @@ def test_fixture_pipeline_produces_all_primary_outputs(tmp_path: Path) -> None:
     assert "WEBVTT" in result.vtt
     assert "বাংলা" in result.bengali_vtt
     assert "This is a Bengali subtitle demo." in result.english_srt
+    assert "He has an office meeting." in result.english_srt
+    assert "Is everyone ready?" in result.english_srt
     assert "यह" in result.hindi_srt
+    assert len(result.bengali_lines) == 3
+    assert result.bengali_lines[1][0].startswith("[Speaker 1]")
     assert result.report.cards[0].verification is not None
     assert result.report.cards[0].verification.verified is True

@@ -16,4 +16,11 @@ def test_health_and_fixture_run_api() -> None:
     run_id = response.json()["run_id"]
     assert client.get(f"/api/runs/{run_id}").json()["status"] == "completed"
     assert "WEBVTT" in client.get(f"/api/runs/{run_id}/files/vtt").text
-    assert client.get(f"/api/runs/{run_id}/result").json()["summary"]["total_cards"] == 3
+    result = client.get(f"/api/runs/{run_id}/result").json()
+    assert result["summary"]["total_cards"] == 3
+    assert {key: len(value) for key, value in result["tracks"].items()} == {
+        "bn": 3,
+        "en": 3,
+        "hi": 3,
+    }
+    assert result["tracks"]["en"][1] == ["He has an office meeting."]
