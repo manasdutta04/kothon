@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail=run.get("error", "Run not completed"))
         result = cast(PipelineResult, run["result"])
         payload = result.report.model_dump(mode="json")
+        payload["mode"] = "groq" if os.getenv("GROQ_API_KEY") else "fixture"
         payload["qc_report"] = result.qc_report
         payload["tracks"] = {
             "bn": [card.card.lines for card in result.report.cards],

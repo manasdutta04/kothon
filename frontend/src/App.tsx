@@ -2,6 +2,7 @@ import { ChangeEvent, useState } from "react";
 
 type Report = {
   run_id: string;
+  mode?: "groq" | "fixture";
   summary: {
     total_cards: number;
     cards_corrected: number;
@@ -56,7 +57,7 @@ export function App() {
 
   return (
     <main className="shell">
-      <nav className="topbar"><span className="mark">কথন</span><span className="eyebrow">caption intelligence / 01</span><span className="status"><i /> local workspace</span></nav>
+      <nav className="topbar"><span className="mark">কথন</span><span className="eyebrow">caption intelligence / 01</span><span className="status"><i /> {report?.mode === "groq" ? "live groq pipeline" : "fixture mode"}</span></nav>
       <section className="hero">
         <div className="hero-copy">
           <p className="kicker">Bengali subtitle engineering</p>
@@ -84,7 +85,7 @@ export function App() {
             <div className="stat-grid"><Stat label="cards" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
             <div className="track-switcher"><button className={track === "bn" ? "active" : ""} onClick={() => setTrack("bn")}>বাংলা CC</button><button className={track === "en" ? "active" : ""} onClick={() => setTrack("en")}>English</button><button className={track === "hi" ? "active" : ""} onClick={() => setTrack("hi")}>हिन्दी</button></div>
             <div className="card-list">{report.cards.map((item, index) => <article className="subtitle-card" key={index}><div className="time">{item.card.start.toFixed(2)} — {item.card.end.toFixed(2)}s</div><p>{(report.tracks?.[track]?.[index] ?? item.card.lines).map((line) => <span key={line}>{line}</span>)}</p><div className="chips"><span className={item.verification?.verified ? "chip good" : "chip warn"}>{item.verification?.verified ? "verified" : "review"}</span>{item.tagging?.speaker_label && <span className="chip">{item.tagging.speaker_label}</span>}{item.tagging?.low_confidence && <span className="chip warn">low confidence</span>}{item.compliance?.flags.map((flag) => <span className="chip danger" key={flag.triggering_text}>{flag.category}</span>)}</div></article>)}</div>
-            <div className="qc-strip">{report.qc_report?.review_queue?.length ?? 0} review items ranked by risk</div><div className="downloads"><a href={`${API}/runs/${report.run_id}/files/bengali-vtt`}>Bengali VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/english-srt`}>English SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/hindi-srt`}>Hindi SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/qc-json`}>QC JSON ↗</a></div>
+            <div className="qc-strip">{report.qc_report?.review_queue?.length ?? 0} review items ranked by risk · {report.mode === "fixture" ? "configure GROQ_API_KEY for real transcription" : "provider-backed run"}</div><div className="downloads"><a href={`${API}/runs/${report.run_id}/files/bengali-vtt`}>Bengali VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/english-srt`}>English SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/hindi-srt`}>Hindi SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/qc-json`}>QC JSON ↗</a></div>
           </>}
         </div>
       </section>
