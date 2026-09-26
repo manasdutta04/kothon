@@ -1,5 +1,6 @@
 """Provider-independent Kothon pipeline orchestration."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -39,6 +40,7 @@ def run_pipeline(
     config: KothonConfig,
     *,
     run_id: str | None = None,
+    event_sink: Callable[[TraceEvent], None] | None = None,
 ) -> PipelineResult:
     """Run the offline fixture pipeline with deterministic verification.
 
@@ -94,8 +96,7 @@ def run_pipeline(
         payload: dict[str, object],
         started_at: float,
     ) -> None:
-        trace.append(
-            TraceEvent(
+        event = TraceEvent(
                 event_id=f"trace-{len(trace) + 1:04d}",
                 stage=stage,
                 status="completed",
@@ -105,7 +106,9 @@ def run_pipeline(
                 duration_ms=(perf_counter() - started_at) * 1000,
                 payload=payload,
             )
-        )
+        trace.append(event)
+        if event_sink is not None:
+            event_sink(event)
 
     transcription_started = perf_counter()
     transcription = transcription_provider.transcribe(media_path, config.language_hint)

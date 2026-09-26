@@ -7,17 +7,42 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from kothon.config import KothonConfig, load_runtime_config
-from kothon.contracts import PipelineResult
-from kothon.media import MediaError
+from kothon.contracts import PipelineResult, TraceEvent
+from kothon.media import MediaError, inspect_media
 from kothon.pipeline import run_pipeline
 
 RUNS: dict[str, Any] = {}
+
+
+def _execute_run(run_id: str, media_path: Path) -> None:
+    RUNS[run_id]["status"] = "running"
+
+    def receive_event(event: TraceEvent) -> None:
+        RUNS[run_id].setdefault("events", []).append(event)
+
+    try:
+        result = run_pipeline(
+            media_path,
+            runtime_config(),
+            run_id=run_id,
+            event_sink=receive_event,
+        )
+        RUNS[run_id] = {
+            "status": "completed",
+            "result": result,
+            "events": result.trace,
+        }
+    except Exception as exc:
+        RUNS[run_id]["status"] = "failed"
+        RUNS[run_id]["error"] = str(exc)
+    finally:
+        media_path.unlink(missing_ok=True)
 
 
 def runtime_config() -> KothonConfig:
@@ -42,7 +67,10 @@ def create_app() -> FastAPI:
         return {"available": ["fixture", "groq"]}
 
     @app.post("/api/runs")
-    async def create_run(file: Annotated[UploadFile, File(...)]) -> dict[str, str]:
+    async def create_run(
+        background_tasks: BackgroundTasks,
+        file: Annotated[UploadFile, File(...)],
+    ) -> dict[str, str]:
         run_id = str(uuid4())
         suffix = Path(file.filename or "upload.bin").suffix
         maximum_bytes = int(os.getenv("KOTHON_MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))
@@ -61,30 +89,28 @@ def create_app() -> FastAPI:
         try:
             if not media_path.is_file():
                 raise MediaError("Uploaded media could not be stored")
-            result = run_pipeline(
-                media_path,
-                runtime_config(),
-                run_id=run_id,
-            )
-            RUNS[run_id] = {"status": "completed", "result": result}
+            inspect_media(media_path)
         except MediaError as exc:
             media_path.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=422,
                 detail={"code": "invalid_media", "message": str(exc)},
             ) from exc
-        except Exception as exc:
-            RUNS[run_id] = {"status": "failed", "error": str(exc)}
-        finally:
-            media_path.unlink(missing_ok=True)
-        return {"run_id": run_id, "status": str(RUNS[run_id]["status"])}
+        RUNS[run_id] = {"status": "queued", "events": [], "media_path": str(media_path)}
+        background_tasks.add_task(_execute_run, run_id, media_path)
+        return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
         run = RUNS.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
-        return {"run_id": run_id, "status": run["status"]}
+        return {
+            "run_id": run_id,
+            "status": run["status"],
+            "error": run.get("error"),
+            "events": [event.model_dump(mode="json") for event in run.get("events", [])],
+        }
 
     @app.get("/api/runs/{run_id}/result")
     def get_result(run_id: str) -> dict[str, Any]:
@@ -117,8 +143,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Run not found")
         if run["status"] != "completed":
             raise HTTPException(status_code=409, detail=run.get("error", "Run not completed"))
-        result = cast(PipelineResult, run["result"])
-        return [event.model_dump(mode="json") for event in result.trace]
+        events = run.get("events", [])
+        return [event.model_dump(mode="json") for event in events]
 
     @app.get("/api/runs/{run_id}/files/{file_type}")
     def get_file(run_id: str, file_type: str) -> Response:

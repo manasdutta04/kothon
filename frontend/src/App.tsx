@@ -49,6 +49,16 @@ export function App() {
       const created = await fetch(`${API}/runs`, { method: "POST", body });
       if (!created.ok) throw new Error("The API rejected this run.");
       const { run_id: runId } = await created.json();
+      let status = "queued";
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const statusResponse = await fetch(`${API}/runs/${runId}`);
+        const statusPayload = await statusResponse.json();
+        status = statusPayload.status;
+        if (status === "completed") break;
+        if (status === "failed") throw new Error(statusPayload.error ?? "The pipeline failed.");
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+      if (status !== "completed") throw new Error("The pipeline timed out while processing.");
       const result = await fetch(`${API}/runs/${runId}/result`);
       if (!result.ok) throw new Error("The run did not produce a report.");
       setReport(await result.json());
