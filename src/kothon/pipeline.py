@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from kothon.assembly.report import build_report
 from kothon.assembly.subtitles import render_srt, render_vtt
+from kothon.audio import extract_evidence
 from kothon.config import KothonConfig
 from kothon.contracts import (
     CardReport,
@@ -15,6 +16,7 @@ from kothon.contracts import (
     VerificationRecord,
     Violation,
 )
+from kothon.media import read_audio
 from kothon.providers.fixtures import (
     FixtureComplianceProvider,
     FixtureCorrectionProvider,
@@ -24,6 +26,7 @@ from kothon.providers.fixtures import (
     FixtureTranslationProvider,
 )
 from kothon.providers.groq import GroqClient
+from kothon.speech.diarization import diarize
 from kothon.verification.rules import check_card
 
 
@@ -79,6 +82,12 @@ def run_pipeline(
     )
     transcription = transcription_provider.transcribe(media_path, config.language_hint)
     proposed = segmentation_provider.segment(transcription, config.subtitle_rules)
+    try:
+        audio = read_audio(media_path)
+        audio_evidence = extract_evidence(audio)
+    except Exception:
+        audio_evidence = []
+    speaker_turns = diarize(transcription.segments, audio_evidence)
     reports: list[CardReport] = []
     final_cards: list[SubtitleCard] = []
     translation_provider = groq if groq is not None else FixtureTranslationProvider()
@@ -104,8 +113,33 @@ def run_pipeline(
         )
         tagging = tagging_provider.tag(final_card, {})
         compliance = compliance_provider.analyze(final_card)
-        if tagging.speaker_label is None:
+        matching_turns = [
+            turn for turn in speaker_turns
+            if turn.start < final_card.end and turn.end > final_card.start
+        ]
+        if matching_turns:
+            tagging.speaker_label = matching_turns[0].speaker_id
+            if matching_turns[0].confidence < 0.6:
+                tagging.low_confidence = True
+        elif tagging.speaker_label is None:
             tagging.speaker_label = "Speaker 1"
+        supporting_audio = [
+            item for item in audio_evidence
+            if item.start < final_card.end and item.end > final_card.start
+        ]
+        if supporting_audio and max(item.speech_activity for item in supporting_audio) < 0.05:
+            issues.append(QCIssue(
+                issue_id=f"qc-{final_card.card_id}-silence",
+                severity="critical",
+                score=100,
+                category="hallucination_over_silence",
+                cue_id=final_card.card_id,
+                start=final_card.start,
+                end=final_card.end,
+                evidence="No speech activity supports this cue window.",
+                recommended_action="Listen to the source before approving the cue.",
+                affected_tracks=["bn", "en", "hi"],
+            ))
         if original.reading_speed_cps > config.subtitle_rules.max_reading_speed_cps:
             issues.append(QCIssue(
                 issue_id=f"qc-{final_card.card_id}-cps", severity="medium", score=60,
