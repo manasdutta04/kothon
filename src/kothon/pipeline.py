@@ -20,6 +20,7 @@ from kothon.providers.fixtures import (
     FixtureTaggingProvider,
     FixtureTranscriptionProvider,
 )
+from kothon.providers.groq import GroqClient
 from kothon.verification.rules import check_card
 
 
@@ -37,14 +38,44 @@ def run_pipeline(
     """
     if not media_path.exists():
         raise FileNotFoundError(media_path)
-    if config.providers.transcription != "fixture":
-        raise NotImplementedError("Only the fixture transcription provider is wired in this stage")
-
-    transcription = FixtureTranscriptionProvider().transcribe(media_path, config.language_hint)
-    proposed = FixtureSegmentationProvider().segment(transcription, config.subtitle_rules)
-    correction_provider = FixtureCorrectionProvider()
-    tagging_provider = FixtureTaggingProvider()
-    compliance_provider = FixtureComplianceProvider()
+    provider_names = config.providers.model_dump()
+    groq_needed = "groq" in provider_names.values()
+    groq = (
+        GroqClient(
+            transcription_model=config.providers.transcription_model,
+            text_model=config.providers.text_model,
+            timeout=config.runtime.request_timeout_seconds,
+        )
+        if groq_needed
+        else None
+    )
+    transcription_provider = (
+        groq
+        if config.providers.transcription == "groq" and groq is not None
+        else FixtureTranscriptionProvider()
+    )
+    segmentation_provider = (
+        groq
+        if config.providers.segmentation == "groq" and groq is not None
+        else FixtureSegmentationProvider()
+    )
+    correction_provider = (
+        groq
+        if config.providers.correction == "groq" and groq is not None
+        else FixtureCorrectionProvider()
+    )
+    tagging_provider = (
+        groq
+        if config.providers.tagging == "groq" and groq is not None
+        else FixtureTaggingProvider()
+    )
+    compliance_provider = (
+        groq
+        if config.providers.compliance == "groq" and groq is not None
+        else FixtureComplianceProvider()
+    )
+    transcription = transcription_provider.transcribe(media_path, config.language_hint)
+    proposed = segmentation_provider.segment(transcription, config.subtitle_rules)
     reports: list[CardReport] = []
     final_cards: list[SubtitleCard] = []
 
