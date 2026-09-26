@@ -10,6 +10,47 @@ class MediaError(RuntimeError):
     """Raised when media cannot be inspected or decoded."""
 
 
+def write_audio_chunks(
+    audio: AudioChunk,
+    output_dir: Path,
+    *,
+    chunk_seconds: float = 30.0,
+    overlap_seconds: float = 1.0,
+) -> list[tuple[Path, float]]:
+    """Write small mono PCM WAV chunks for remote transcription.
+
+    A 30-second 16 kHz mono PCM chunk is comfortably below Groq's upload
+    ceiling, including WAV headers.  The returned offset is the timestamp of
+    the chunk's first sample in the source media.
+    """
+    if chunk_seconds <= 0 or overlap_seconds < 0 or overlap_seconds >= chunk_seconds:
+        raise ValueError("chunk_seconds must be positive and overlap must be smaller")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    import numpy as np
+
+    samples = np.asarray(audio.samples, dtype=np.float32)
+    chunk_size = max(1, round(chunk_seconds * audio.sample_rate))
+    overlap = round(overlap_seconds * audio.sample_rate)
+    step = max(1, chunk_size - overlap)
+    chunks: list[tuple[Path, float]] = []
+    for index, start in enumerate(range(0, len(samples), step), start=1):
+        end = min(len(samples), start + chunk_size)
+        if end <= start:
+            break
+        clipped = np.clip(samples[start:end], -1.0, 1.0)
+        pcm = (clipped * 32767.0).astype(np.int16).tobytes()
+        chunk_path = output_dir / f"chunk-{index:04d}.wav"
+        with wave.open(str(chunk_path), "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(audio.sample_rate)
+            output.writeframes(pcm)
+        chunks.append((chunk_path, start / audio.sample_rate))
+        if end == len(samples):
+            break
+    return chunks
+
+
 def _inspect_wav(path: Path) -> MediaMetadata:
     try:
         with wave.open(str(path), "rb") as audio:

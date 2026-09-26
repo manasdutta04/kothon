@@ -7,6 +7,7 @@ package remains easy to test and the provider's wire contract is explicit.
 import json
 import mimetypes
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from kothon.contracts import (
     Transcript,
     TranslatedCue,
 )
+from kothon.media import read_audio, write_audio_chunks
 
 
 class GroqConfigurationError(RuntimeError):
@@ -104,6 +106,23 @@ class GroqClient:
 
     def transcribe(self, media_path: Path, language_hint: str) -> Transcript:
         self._require(self.transcription_model)
+        # Groq's speech endpoint has a per-request upload ceiling.  Decode
+        # locally and stitch short timestamped requests for long media so a
+        # 150 MB video remains usable without local model weights.
+        if media_path.stat().st_size > 24_000_000:
+            audio = read_audio(media_path)
+            with tempfile.TemporaryDirectory(prefix="kothon-groq-") as directory:
+                chunks = write_audio_chunks(audio, Path(directory))
+                transcripts = [
+                    self._transcribe_single(chunk_path, language_hint, offset)
+                    for chunk_path, offset in chunks
+                ]
+            return self._merge_transcripts(transcripts)
+        return self._transcribe_single(media_path, language_hint, 0.0)
+
+    def _transcribe_single(
+        self, media_path: Path, language_hint: str, offset: float
+    ) -> Transcript:
         with media_path.open("rb") as media:
             response = self._request_with_retries(
                 "audio/transcriptions",
@@ -142,8 +161,8 @@ class GroqClient:
                 {
                     "segment_id": f"segment-{index + 1:04d}",
                     "text": text,
-                    "start": float(segment.get("start", 0)),
-                    "end": float(segment.get("end", 0)),
+                    "start": float(segment.get("start", 0)) + offset,
+                    "end": float(segment.get("end", 0)) + offset,
                     "confidence": float(segment.get("confidence") or confidence),
                     "contains_code_mixing": any(
                         any("a" <= char.lower() <= "z" for char in str(word.get("word", "")))
@@ -152,8 +171,14 @@ class GroqClient:
                     "words": [
                         {
                             "text": str(word.get("word", "")).strip(),
-                            "start": float(word.get("start") or segment.get("start") or 0.0),
-                            "end": float(word.get("end") or segment.get("end") or 0.0),
+                            "start": (
+                                float(word.get("start") or segment.get("start") or 0.0)
+                                + offset
+                            ),
+                            "end": (
+                                float(word.get("end") or segment.get("end") or 0.0)
+                                + offset
+                            ),
                             "alignment_method": "provider_word_timestamp",
                             "confidence": float(word.get("confidence") or 0.8),
                         }
@@ -163,6 +188,24 @@ class GroqClient:
                 }
             )
         return Transcript.model_validate({"segments": normalized})
+
+    @staticmethod
+    def _merge_transcripts(transcripts: list[Transcript]) -> Transcript:
+        merged = []
+        seen: set[tuple[str, int]] = set()
+        for transcript in transcripts:
+            for segment in transcript.segments:
+                key = (" ".join(segment.text.split()).casefold(), round(segment.start * 10))
+                if not segment.text or key in seen:
+                    continue
+                seen.add(key)
+                merged.append(segment)
+        merged.sort(key=lambda segment: (segment.start, segment.end))
+        normalized = [
+            segment.model_copy(update={"segment_id": f"segment-{index:04d}"})
+            for index, segment in enumerate(merged, start=1)
+        ]
+        return Transcript(segments=normalized)
 
     def structured_text(self, system_prompt: str, user_payload: object) -> dict[str, Any]:
         self._require(self.text_model)
