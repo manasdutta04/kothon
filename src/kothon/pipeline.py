@@ -188,6 +188,37 @@ def run_pipeline(
                 tagging.low_confidence = True
         elif tagging.speaker_label is None:
             tagging.speaker_label = "Speaker 1"
+        transcription_confidence = min(
+            confidence_by_segment[source_id] for source_id in final_card.source_segment_ids
+        )
+        if transcription_confidence < 0.75:
+            issues.append(QCIssue(
+                issue_id=f"qc-{final_card.card_id}-asr-confidence",
+                severity="high",
+                score=85,
+                category="low_confidence_asr",
+                cue_id=final_card.card_id,
+                start=final_card.start,
+                end=final_card.end,
+                evidence=f"ASR confidence is {transcription_confidence:.2f}, below 0.75.",
+                recommended_action="Listen to the source and correct the Bengali text if needed.",
+                affected_tracks=["bn", "en", "hi"],
+            ))
+        if tagging.low_confidence:
+            issues.append(QCIssue(
+                issue_id=f"qc-{final_card.card_id}-speaker-confidence",
+                severity="high",
+                score=80,
+                category="ambiguous_speaker_attribution",
+                cue_id=final_card.card_id,
+                start=final_card.start,
+                end=final_card.end,
+                evidence="Speaker turn evidence did not meet the confidence threshold.",
+                recommended_action=(
+                    "Review the speaker boundary and keep the stable ID only if confirmed."
+                ),
+                affected_tracks=["bn"],
+            ))
         if any(word.alignment_method == "duration_weighted_estimate" for word in aligned_words):
             issues.append(QCIssue(
                 issue_id=f"qc-{final_card.card_id}-alignment",
@@ -245,18 +276,31 @@ def run_pipeline(
                 affected_tracks=["bn", "en", "hi"],
             ))
         for language in translated:
-            translated[language].append(
-                translation_provider.translate(final_card, language).lines[0]
-            )
+            translation = translation_provider.translate(final_card, language)
+            translated[language].append(translation.lines[0])
+            if translation.translation_confidence < 0.7:
+                issues.append(QCIssue(
+                    issue_id=f"qc-{final_card.card_id}-{language}-translation",
+                    severity="medium",
+                    score=55,
+                    category="translation_uncertainty",
+                    cue_id=final_card.card_id,
+                    start=final_card.start,
+                    end=final_card.end,
+                    evidence=(
+                        f"{language.upper()} translation confidence is "
+                        f"{translation.translation_confidence:.2f}."
+                    ),
+                    recommended_action="Compare the translation with the verified Bengali cue.",
+                    affected_tracks=[language],
+                ))
         reports.append(
             CardReport(
                 card=final_card,
                 verification=verification,
                 tagging=tagging,
                 compliance=compliance,
-                transcription_confidence=min(
-                    confidence_by_segment[source_id] for source_id in final_card.source_segment_ids
-                ),
+                transcription_confidence=transcription_confidence,
                 speaker_id=tagging.speaker_label,
                 aligned_words=aligned_words,
                 audio_evidence=card_evidence,
