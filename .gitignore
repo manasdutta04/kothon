@@ -20,3 +20,4 @@ frontend/dist/
 *.tsbuildinfo
 .agents/
 skills-lock.json
+interface.zip

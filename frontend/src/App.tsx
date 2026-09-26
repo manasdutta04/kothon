@@ -1,4 +1,4 @@
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 type Track = "bn" | "en" | "hi";
 type QCIssue = { category: string; score: number; severity: string; evidence: string; recommended_action: string };
@@ -29,20 +29,48 @@ const stageNames = ["transcription", "segmentation", "verification", "accessibil
 
 export function App() {
   const [view, setView] = useState<"landing" | "workspace">(
-    window.location.hash === "#app" ? "workspace" : "landing",
+    window.location.pathname === "/app" ? "workspace" : "landing",
   );
 
+  useEffect(() => {
+    const handlePopState = () => setView(window.location.pathname === "/app" ? "workspace" : "landing");
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const enterWorkspace = () => {
-    window.history.replaceState({}, "", "#app");
+    window.history.pushState({}, "", "/app");
     setView("workspace");
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
   if (view === "landing") return <LandingPage onStart={enterWorkspace} />;
-  return <Workspace onBack={() => { window.history.replaceState({}, "", ""); setView("landing"); }} />;
+  return <Workspace onBack={() => { window.history.pushState({}, "", "/"); setView("landing"); }} />;
 }
 
 function LandingPage({ onStart }: { onStart: () => void }) {
+  const pageRef = useRef<HTMLElement>(null);
+  const [activeSection, setActiveSection] = useState("landing-hero");
+
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root) return;
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.classList.add("is-visible");
+      });
+    }, { threshold: 0.18 });
+    const sectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) setActiveSection(entry.target.id);
+      });
+    }, { threshold: 0.35 });
+    root.querySelectorAll(".landing-reveal").forEach((element) => revealObserver.observe(element));
+    root.querySelectorAll<HTMLElement>("section[id]").forEach((element) => sectionObserver.observe(element));
+    return () => { revealObserver.disconnect(); sectionObserver.disconnect(); };
+  }, []);
+
+  const navigateTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   const signals = [
     ["01", "Speech signal", "Bengali-first transcription with code-mixed words intact."],
     ["02", "Evidence ledger", "Every risky cue keeps the audio evidence that raised it."],
@@ -55,21 +83,56 @@ function LandingPage({ onStart }: { onStart: () => void }) {
     ["03", "STABLE", "IDENTITIES", "Speaker IDs persist from first appearance to final cue."],
     ["04", "REVIEW", "BY DESIGN", "Uncertainty is surfaced so editors know where to listen."],
   ];
-  return <main className="landing-shell">
+  const navItems = [["landing-hero", "Index"], ["landing-signals", "Signals"], ["landing-work", "Pipeline"], ["landing-principles", "Principles"], ["landing-colophon", "Colophon"]];
+  return <main ref={pageRef} className="landing-shell">
     <div className="landing-grid" aria-hidden="true" />
-    <aside className="landing-side-nav"><span className="side-word">KOTHON</span><span className="side-index">BN / 01</span></aside>
+    <aside className="landing-side-nav"><span className="side-word">KOTHON</span><div className="landing-dots">{navItems.map(([id, label]) => <button key={id} className={activeSection === id ? "active" : ""} onClick={() => navigateTo(id)} aria-label={`Go to ${label}`}><i /><span>{label}</span></button>)}</div><span className="side-index">BN / 01</span></aside>
     <nav className="landing-nav"><span className="landing-logo">কথন</span><span className="landing-nav-copy">BENGALI CAPTION INTELLIGENCE</span><span className="landing-status"><i /> OPEN PIPELINE</span></nav>
     <div className="landing-content">
-      <section id="landing-hero" className="landing-hero">
-        <div><span className="landing-kicker">PROBLEM 02 / SPEECH & LANGUAGE</span><h1>THE<br /><em>VOICE</em><br />REMAINS.</h1><p>Broadcast-minded Bengali captions built around evidence, stable speakers, and the moments a machine should never pretend to understand.</p><div className="landing-actions"><button onClick={onStart} className="landing-button">Get started <span>↗</span></button><a href="#landing-signals">Read the signal ↓</a></div></div>
+      <section id="landing-hero" className="landing-hero landing-reveal">
+        <AnimatedNoiseLanding /><div><span className="landing-kicker">PROBLEM 02 / SPEECH & LANGUAGE</span><SplitFlapWord text="KOTHON" /><h1>THE<br /><em>VOICE</em><br />REMAINS.</h1><p>Broadcast-minded Bengali captions built around evidence, stable speakers, and the moments a machine should never pretend to understand.</p><div className="landing-actions"><button onClick={onStart} className="landing-button">Get started <span>↗</span></button><button onClick={() => navigateTo("landing-signals")} className="landing-text-button">Read the signal ↓</button></div></div>
         <div className="landing-orb" aria-hidden="true"><span>ক</span><span>থ</span><span>ন</span><small>BN / CC</small></div>
       </section>
-      <section id="landing-signals" className="landing-section"><div className="landing-section-head"><span>01 / Signals</span><h2>WHAT IT KEEPS</h2></div><div className="signal-strip">{signals.map(([number, title, note]) => <article className="signal-tile" key={number}><div><span>No. {number}</span><span>LIVE SYSTEM</span></div><h3>{title}</h3><b /><p>{note}</p></article>)}</div></section>
-      <section className="landing-section landing-work"><div className="landing-section-head"><span>02 / The pipeline</span><h2>FROM AUDIO<br />TO EVIDENCE</h2></div><div className="work-grid"><article className="work-feature"><span>01 — INGEST</span><strong>Listen before<br />you label.</strong><p>CPU media inspection, speech activity, timestamps and stable speaker turns form the ground truth around every cue.</p></article><article><span>02 — TRANSLATE</span><strong>Three tracks.<br />One timeline.</strong><p>বাংলা CC, English and Hindi inherit the authoritative Bengali timing.</p></article><article><span>03 — QC</span><strong>Review the<br />danger first.</strong><p>Silence hallucinations, uncertain speakers and translation risks are ranked for editors.</p></article><article><span>04 — EXPORT</span><strong>Ready to<br />ship.</strong><p>WebVTT, SRT, QC JSON and a complete trace leave together.</p></article></div></section>
-      <section className="landing-section landing-principles"><div className="landing-section-head"><span>03 / Principles</span><h2>HOW WE WORK</h2></div><div className="principle-list">{principles.map(([number, lead, tail, note], index) => <article key={number} className={index % 2 ? "align-right" : ""}><span>{number} / {lead}</span><h3><mark>{lead}</mark> {tail}</h3><p>{note}</p><i /></article>)}</div></section>
-      <section className="landing-colophon"><span>KOTHON / 2026</span><div><strong>Make uncertainty<br /><em>visible.</em></strong><button onClick={onStart}>Enter the workspace ↗</button></div><span>GROQ READY · CPU SAFE · NO LOCAL MODELS</span></section>
+      <section id="landing-signals" className="landing-section landing-reveal"><div className="landing-section-head"><span>01 / Signals</span><h2>WHAT IT KEEPS</h2></div><div className="signal-strip">{signals.map(([number, title, note]) => <article className="signal-tile" key={number}><div><span>No. {number}</span><span>LIVE SYSTEM</span></div><h3>{title}</h3><b /><p>{note}</p></article>)}</div></section>
+      <section id="landing-work" className="landing-section landing-work landing-reveal"><div className="landing-section-head"><span>02 / The pipeline</span><h2>FROM AUDIO<br />TO EVIDENCE</h2></div><div className="work-grid"><article className="work-feature"><span>01 — INGEST</span><strong>Listen before<br />you label.</strong><p>CPU media inspection, speech activity, timestamps and stable speaker turns form the ground truth around every cue.</p></article><article><span>02 — TRANSLATE</span><strong>Three tracks.<br />One timeline.</strong><p>বাংলা CC, English and Hindi inherit the authoritative Bengali timing.</p></article><article><span>03 — QC</span><strong>Review the<br />danger first.</strong><p>Silence hallucinations, uncertain speakers and translation risks are ranked for editors.</p></article><article><span>04 — EXPORT</span><strong>Ready to<br />ship.</strong><p>WebVTT, SRT, QC JSON and a complete trace leave together.</p></article></div></section>
+      <section id="landing-principles" className="landing-section landing-principles landing-reveal"><div className="landing-section-head"><span>03 / Principles</span><h2>HOW WE WORK</h2></div><div className="principle-list">{principles.map(([number, lead, tail, note], index) => <article key={number} className={index % 2 ? "align-right" : ""}><span>{number} / {lead}</span><h3><mark>{lead}</mark> {tail}</h3><p>{note}</p><i /></article>)}</div></section>
+      <section id="landing-colophon" className="landing-colophon landing-reveal"><span>KOTHON / 2026</span><div><strong>Make uncertainty<br /><em>visible.</em></strong><button onClick={onStart}>Enter the workspace ↗</button></div><span>GROQ READY · CPU SAFE · NO LOCAL MODELS</span></section>
     </div>
   </main>;
+}
+
+const FLAP_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+function SplitFlapWord({ text }: { text: string }) {
+  const [display, setDisplay] = useState(() => text.split("").map(() => " "));
+  const timer = useRef<number | null>(null);
+  const animate = () => {
+    if (timer.current !== null) window.clearInterval(timer.current);
+    let step = 0;
+    timer.current = window.setInterval(() => {
+      step += 1;
+      setDisplay(text.split("").map((char, index) => step > 7 + index * 2 ? char : FLAP_CHARS[Math.floor(Math.random() * FLAP_CHARS.length)]));
+      if (step > 7 + text.length * 2 && timer.current !== null) { window.clearInterval(timer.current); timer.current = null; }
+    }, 55);
+  };
+  useEffect(() => { animate(); return () => { if (timer.current !== null) window.clearInterval(timer.current); }; }, []);
+  return <div className="split-flap-word" aria-label={text} onMouseEnter={animate}>{display.map((char, index) => <span key={`${index}-${char}`} className={char === text[index] ? "settled" : "flipping"}>{char}</span>)}</div>;
+}
+
+function AnimatedNoiseLanding() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    let frame = 0;
+    let animationId = 0;
+    const resize = () => { canvas.width = Math.max(1, Math.floor(canvas.offsetWidth / 3)); canvas.height = Math.max(1, Math.floor(canvas.offsetHeight / 3)); };
+    const draw = () => { frame += 1; if (frame % 2 === 0) { const pixels = context.createImageData(canvas.width, canvas.height); for (let index = 0; index < pixels.data.length; index += 4) { const value = Math.random() * 255; pixels.data[index] = value; pixels.data[index + 1] = value; pixels.data[index + 2] = value; pixels.data[index + 3] = 255; } context.putImageData(pixels, 0, 0); } animationId = window.requestAnimationFrame(draw); };
+    resize(); window.addEventListener("resize", resize); draw();
+    return () => { window.removeEventListener("resize", resize); window.cancelAnimationFrame(animationId); };
+  }, []);
+  return <canvas ref={canvasRef} className="landing-noise" aria-hidden="true" />;
 }
 
 function Workspace({ onBack }: { onBack: () => void }) {
