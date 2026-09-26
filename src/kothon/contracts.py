@@ -16,6 +16,7 @@ class TranscriptSegment(StrictModel):
     end: float = Field(gt=0)
     confidence: float = Field(ge=0, le=1)
     contains_code_mixing: bool = False
+    words: list["AlignedWord"] = Field(default_factory=list)
 
 
 class Transcript(StrictModel):
@@ -163,6 +164,23 @@ class AudioEvidence(StrictModel):
     music_score: float = Field(ge=0, le=1)
     transition_score: float = Field(ge=0, le=1)
     evidence_type: str
+
+
+class SpeakerTurn(StrictModel):
+    speaker_id: str
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    confidence: float = Field(ge=0, le=1)
+    evidence: str
+
+
+class AlignedWord(StrictModel):
+    text: str
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    speaker_id: str | None = None
+    alignment_method: str
+    confidence: float = Field(ge=0, le=1)
 
 
 class TranslatedCue(StrictModel):
