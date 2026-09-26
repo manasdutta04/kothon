@@ -71,7 +71,7 @@ def read_audio(path: Path, *, sample_rate: int = 16_000) -> AudioChunk:
                 raise MediaError(f"Unsupported WAV sample width: {width}")
             samples = np.frombuffer(raw, dtype=dtype).astype(np.float32)
             if width == 1:
-                samples = (samples - 128) / 128
+                samples = ((samples - 128) / 128).astype(np.float32)
             else:
                 samples /= float(2 ** (width * 8 - 1))
             samples = samples.reshape(-1, channels).mean(axis=1)
@@ -92,7 +92,7 @@ def read_audio(path: Path, *, sample_rate: int = 16_000) -> AudioChunk:
     try:
         import subprocess
 
-        import imageio_ffmpeg  # type: ignore[import-untyped]
+        import imageio_ffmpeg
 
         process = subprocess.run(
             [
