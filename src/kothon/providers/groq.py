@@ -79,11 +79,17 @@ class GroqClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"}
 
-    def _json_request(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _json_request(
+        self, endpoint: str, payload: dict[str, Any], *, json_mode: bool = True
+    ) -> dict[str, Any]:
         response = self._request_with_retries(
             endpoint,
             headers={**self._headers(), "Content-Type": "application/json"},
-            json=payload,
+            json=(
+                payload
+                if json_mode
+                else {key: value for key, value in payload.items() if key != "response_format"}
+            ),
         )
         if response.is_error:
             if response.status_code == 413:
@@ -276,21 +282,38 @@ class GroqClient:
 
     def structured_text(self, system_prompt: str, user_payload: object) -> dict[str, Any]:
         self._require(self.text_model)
-        raw = self._json_request(
-            "chat/completions",
-            {
-                "model": self.text_model,
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
+        payload = {
+            "model": self.text_model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": json.dumps(user_payload, ensure_ascii=False),
+                },
+            ],
+        }
+        try:
+            raw = self._json_request("chat/completions", payload)
+        except RuntimeError as exc:
+            if "HTTP 400" not in str(exc):
+                raise
+            fallback_prompt = (
+                f"{system_prompt}\nReturn one valid JSON object only. "
+                "Do not use Markdown fences or explanatory text."
+            )
+            fallback_payload = {
+                **payload,
                 "messages": [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": fallback_prompt},
                     {
                         "role": "user",
                         "content": json.dumps(user_payload, ensure_ascii=False),
                     },
                 ],
-            },
-        )
+            }
+            raw = self._json_request("chat/completions", fallback_payload, json_mode=False)
         choices = raw.get("choices")
         if not isinstance(choices, list) or not choices:
             raise RuntimeError("Groq returned no chat choices")
@@ -304,7 +327,13 @@ class GroqClient:
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError as exc:
-            raise RuntimeError("Groq returned invalid structured JSON") from exc
+            cleaned = content.strip()
+            if cleaned.startswith("```") and cleaned.endswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            try:
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                raise RuntimeError("Groq returned invalid structured JSON") from exc
         if not isinstance(parsed, dict):
             raise RuntimeError("Groq structured response was not a JSON object")
         return parsed
