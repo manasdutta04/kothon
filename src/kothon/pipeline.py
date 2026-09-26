@@ -112,18 +112,11 @@ def run_pipeline(
             final=final_check,
             verified=final_check.violations == [Violation.NONE],
         )
-        tagging = tagging_provider.tag(final_card, {})
         compliance = compliance_provider.analyze(final_card)
         matching_turns = [
             turn for turn in speaker_turns
             if turn.start < final_card.end and turn.end > final_card.start
         ]
-        if matching_turns:
-            tagging.speaker_label = matching_turns[0].speaker_id
-            if matching_turns[0].confidence < 0.6:
-                tagging.low_confidence = True
-        elif tagging.speaker_label is None:
-            tagging.speaker_label = "Speaker 1"
         source_segments = [
             segment
             for segment in transcription.segments
@@ -139,6 +132,19 @@ def run_pipeline(
             for item in audio_evidence
             if item.start < final_card.end and item.end > final_card.start
         ]
+        tagging = tagging_provider.tag(
+            final_card,
+            {
+                "audio_evidence": [item.model_dump(mode="json") for item in card_evidence],
+                "speaker_turns": [item.model_dump(mode="json") for item in matching_turns],
+            },
+        )
+        if matching_turns:
+            tagging.speaker_label = matching_turns[0].speaker_id
+            if matching_turns[0].confidence < 0.6:
+                tagging.low_confidence = True
+        elif tagging.speaker_label is None:
+            tagging.speaker_label = "Speaker 1"
         if any(word.alignment_method == "duration_weighted_estimate" for word in aligned_words):
             issues.append(QCIssue(
                 issue_id=f"qc-{final_card.card_id}-alignment",
@@ -198,12 +204,20 @@ def run_pipeline(
     speaker_labels = [
         item.tagging.speaker_label if item.tagging else "Speaker 1" for item in reports
     ]
-    bengali_cards = [
-        card.model_copy(
-            update={"lines": [f"[{speaker_labels[index]}] {line}" for line in card.lines]}
+    bengali_cards: list[SubtitleCard] = []
+    for index, card in enumerate(final_cards):
+        card_tagging = reports[index].tagging
+        tags = card_tagging.non_speech_tags if card_tagging is not None else []
+        bengali_cards.append(
+            card.model_copy(
+                update={
+                    "lines": [
+                        " ".join([f"[{speaker_labels[index]}]"] + tags + [line])
+                        for line in card.lines
+                    ]
+                }
+            )
         )
-        for index, card in enumerate(final_cards)
-    ]
     english_cards = [
         card.model_copy(update={"lines": [translated["en"][index]]})
         for index, card in enumerate(final_cards)
@@ -212,6 +226,22 @@ def run_pipeline(
         card.model_copy(update={"lines": [translated["hi"][index]]})
         for index, card in enumerate(final_cards)
     ]
+    for card in bengali_cards:
+        presentation_check = check_card(card, config.subtitle_rules)
+        if presentation_check.violations != [Violation.NONE]:
+            issues.append(QCIssue(
+                issue_id=f"qc-{card.card_id}-presentation",
+                severity="high",
+                score=75,
+                category="presentation_after_tagging",
+                cue_id=card.card_id,
+                start=card.start,
+                end=card.end,
+                evidence=f"Final Bengali CC has violations after speaker/sound tags: "
+                f"{[item.value for item in presentation_check.violations]}.",
+                recommended_action="Rebreak the final CC while keeping evidence-backed tags.",
+                affected_tracks=["bn"],
+            ))
     qc = QCReport(
         issues=issues,
         review_queue=sorted(issues, key=lambda item: item.score, reverse=True),
