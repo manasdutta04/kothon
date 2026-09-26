@@ -131,3 +131,19 @@ class PipelineResult(StrictModel):
     report: PipelineReport
     srt: str
     vtt: str
+
+
+class MediaMetadata(StrictModel):
+    path: str
+    media_type: str
+    duration_seconds: float = Field(ge=0)
+    sample_rate: int | None = Field(default=None, ge=1)
+    channels: int | None = Field(default=None, ge=1)
+    frame_rate: float | None = Field(default=None, ge=0)
+
+
+class AudioChunk(StrictModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    sample_rate: int = Field(ge=1)
+    samples: list[float]
