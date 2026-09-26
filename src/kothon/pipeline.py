@@ -26,6 +26,7 @@ from kothon.providers.fixtures import (
     FixtureTranslationProvider,
 )
 from kothon.providers.groq import GroqClient
+from kothon.speech.alignment import align_segment_words
 from kothon.speech.diarization import diarize
 from kothon.verification.rules import check_card
 
@@ -123,10 +124,35 @@ def run_pipeline(
                 tagging.low_confidence = True
         elif tagging.speaker_label is None:
             tagging.speaker_label = "Speaker 1"
-        supporting_audio = [
-            item for item in audio_evidence
+        source_segments = [
+            segment
+            for segment in transcription.segments
+            if segment.segment_id in final_card.source_segment_ids
+        ]
+        aligned_words = [
+            word
+            for segment in source_segments
+            for word in align_segment_words(segment, matching_turns)
+        ]
+        card_evidence = [
+            item
+            for item in audio_evidence
             if item.start < final_card.end and item.end > final_card.start
         ]
+        if any(word.alignment_method == "duration_weighted_estimate" for word in aligned_words):
+            issues.append(QCIssue(
+                issue_id=f"qc-{final_card.card_id}-alignment",
+                severity="low",
+                score=30,
+                category="estimated_alignment",
+                cue_id=final_card.card_id,
+                start=final_card.start,
+                end=final_card.end,
+                evidence="Word timestamps were estimated from the segment duration.",
+                recommended_action="Review timing if the cue is near a shot or speaker change.",
+                affected_tracks=["bn", "en", "hi"],
+            ))
+        supporting_audio = card_evidence
         if supporting_audio and max(item.speech_activity for item in supporting_audio) < 0.05:
             issues.append(QCIssue(
                 issue_id=f"qc-{final_card.card_id}-silence",
@@ -161,6 +187,9 @@ def run_pipeline(
                 transcription_confidence=min(
                     confidence_by_segment[source_id] for source_id in final_card.source_segment_ids
                 ),
+                speaker_id=tagging.speaker_label,
+                aligned_words=aligned_words,
+                audio_evidence=card_evidence,
             )
         )
         final_cards.append(final_card)

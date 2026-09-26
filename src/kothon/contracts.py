@@ -119,6 +119,9 @@ class CardReport(StrictModel):
     tagging: TaggingResult | None = None
     compliance: ComplianceResult | None = None
     transcription_confidence: float | None = Field(default=None, ge=0, le=1)
+    speaker_id: str | None = None
+    aligned_words: list["AlignedWord"] = Field(default_factory=list)
+    audio_evidence: list["AudioEvidence"] = Field(default_factory=list)
 
 
 class PipelineReport(StrictModel):
