@@ -84,7 +84,7 @@ def create_app() -> FastAPI:
         payload["mode"] = "groq" if os.getenv("GROQ_API_KEY") else "fixture"
         payload["qc_report"] = result.qc_report
         payload["tracks"] = {
-            "bn": [card.card.lines for card in result.report.cards],
+            "bn": result.bengali_lines or [card.card.lines for card in result.report.cards],
             "en": result.english_lines,
             "hi": result.hindi_lines,
         }

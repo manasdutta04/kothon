@@ -89,10 +89,21 @@ class FixtureComplianceProvider:
 
 class FixtureTranslationProvider:
     def translate(self, card: SubtitleCard, language: str) -> TranslatedCue:
-        text = {
-            "en": "This is a Bengali subtitle demo.",
-            "hi": "यह एक बंगाली उपशीर्षक डेमो है।",
-        }[language]
+        translations = {
+            "এটা একটি বাংলা subtitle demo.": {
+                "en": "This is a Bengali subtitle demo.",
+                "hi": "यह एक बंगाली उपशीर्षक डेमो है।",
+            },
+            "ওর office-এ একটা meeting আছে।": {
+                "en": "He has an office meeting.",
+                "hi": "उसकी एक ऑफिस मीटिंग है।",
+            },
+            "সবাই ready তো?": {
+                "en": "Is everyone ready?",
+                "hi": "सब तैयार हैं?",
+            },
+        }
+        text = translations.get(card.lines[0], {}).get(language, card.lines[0])
         return TranslatedCue(
             cue_id=card.card_id,
             language=language,

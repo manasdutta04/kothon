@@ -1,5 +1,7 @@
 import { ChangeEvent, useState } from "react";
 
+type Track = "bn" | "en" | "hi";
+type QCIssue = { category: string; score: number; severity: string; evidence: string; recommended_action: string };
 type Report = {
   run_id: string;
   mode?: "groq" | "fixture";
@@ -15,18 +17,18 @@ type Report = {
     tagging?: { non_speech_tags: string[]; speaker_label: string | null; low_confidence: boolean };
     compliance?: { flags: Array<{ category: string; triggering_text: string }> };
   }>;
-  qc_report?: { review_queue: Array<{ category: string; score: number; evidence: string }> };
-  tracks?: { bn: string[][]; en: string[][]; hi: string[][] };
+  qc_report?: { review_queue: QCIssue[] };
+  tracks?: Record<Track, string[][]>;
 };
 
 const API = "http://127.0.0.1:8000/api";
+const trackNames: Record<Track, string> = { bn: "বাংলা CC", en: "English", hi: "हिन्दी" };
 
 export function App() {
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState("");
-  const [track, setTrack] = useState<"bn" | "en" | "hi">("bn");
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     setFile(event.target.files?.[0] ?? null);
@@ -82,10 +84,11 @@ export function App() {
           <div className="card-label"><span>02</span><span>Evidence ledger</span></div>
           {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage…" : "Your run will appear here as a reviewable record."}</p></div>}
           {report && <>
-            <div className="stat-grid"><Stat label="cards" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
-            <div className="track-switcher"><button className={track === "bn" ? "active" : ""} onClick={() => setTrack("bn")}>বাংলা CC</button><button className={track === "en" ? "active" : ""} onClick={() => setTrack("en")}>English</button><button className={track === "hi" ? "active" : ""} onClick={() => setTrack("hi")}>हिन्दी</button></div>
-            <div className="card-list">{report.cards.map((item, index) => <article className="subtitle-card" key={index}><div className="time">{item.card.start.toFixed(2)} — {item.card.end.toFixed(2)}s</div><p>{(report.tracks?.[track]?.[index] ?? item.card.lines).map((line) => <span key={line}>{line}</span>)}</p><div className="chips"><span className={item.verification?.verified ? "chip good" : "chip warn"}>{item.verification?.verified ? "verified" : "review"}</span>{item.tagging?.speaker_label && <span className="chip">{item.tagging.speaker_label}</span>}{item.tagging?.low_confidence && <span className="chip warn">low confidence</span>}{item.compliance?.flags.map((flag) => <span className="chip danger" key={flag.triggering_text}>{flag.category}</span>)}</div></article>)}</div>
-            <div className="qc-strip">{report.qc_report?.review_queue?.length ?? 0} review items ranked by risk · {report.mode === "fixture" ? "configure GROQ_API_KEY for real transcription" : "provider-backed run"}</div><div className="downloads"><a href={`${API}/runs/${report.run_id}/files/bengali-vtt`}>Bengali VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/english-srt`}>English SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/hindi-srt`}>Hindi SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/qc-json`}>QC JSON ↗</a></div>
+            <div className="stat-grid"><Stat label="cues" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="review queue" value={report.qc_report?.review_queue?.length ?? 0} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
+            <div className="run-note"><span className="run-dot" /> {report.mode === "fixture" ? "Fixture run · structure and QC are live; add GROQ_API_KEY for media transcription" : "Live Groq run · provider output preserved for review"}</div>
+            <div className="card-list">{report.cards.map((item, index) => <CueCard key={index} item={item} index={index} tracks={report.tracks} />)}</div>
+            <QCQueue issues={report.qc_report?.review_queue ?? []} />
+            <div className="downloads"><a href={`${API}/runs/${report.run_id}/files/bengali-vtt`}>Bengali VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/english-srt`}>English SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/hindi-srt`}>Hindi SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/qc-json`}>QC JSON ↗</a></div>
           </>}
         </div>
       </section>
@@ -95,3 +98,19 @@ export function App() {
 }
 
 function Stat({ label, value }: { label: string; value: number }) { return <div><strong>{value}</strong><span>{label}</span></div>; }
+
+function CueCard({ item, index, tracks }: { item: Report["cards"][number]; index: number; tracks?: Record<Track, string[][]> }) {
+  return <article className="subtitle-card">
+    <div className="cue-heading"><div className="time">Cue {String(index + 1).padStart(2, "0")} · {item.card.start.toFixed(2)} — {item.card.end.toFixed(2)}s</div><span className="cue-id">#{String(index + 1).padStart(2, "0")}</span></div>
+    <div className="track-grid">{(["bn", "en", "hi"] as Track[]).map((language) => <TrackPanel key={language} language={language} lines={tracks?.[language]?.[index] ?? (language === "bn" ? item.card.lines : ["Translation unavailable"])} />)}</div>
+    <div className="chips"><span className={item.verification?.verified ? "chip good" : "chip warn"}>{item.verification?.verified ? "verified" : "review"}</span>{item.tagging?.speaker_label && <span className="chip">{item.tagging.speaker_label}</span>}{item.tagging?.low_confidence && <span className="chip warn">low confidence</span>}{item.compliance?.flags.map((flag) => <span className="chip danger" key={flag.triggering_text}>{flag.category}</span>)}</div>
+  </article>;
+}
+
+function TrackPanel({ language, lines }: { language: Track; lines: string[] }) {
+  return <div className={`track-panel track-${language}`}><span className="track-label">{trackNames[language]}</span><p>{lines.map((line, index) => <span key={`${line}-${index}`}>{line}</span>)}</p></div>;
+}
+
+function QCQueue({ issues }: { issues: QCIssue[] }) {
+  return <section className="qc-queue"><div className="queue-heading"><span>Ranked QC queue</span><small>highest risk first</small></div>{issues.length === 0 ? <p className="queue-empty">No review issues were raised by the current run.</p> : issues.slice(0, 6).map((issue, index) => <div className="issue-row" key={`${issue.category}-${index}`}><strong>{String(index + 1).padStart(2, "0")}</strong><span><b>{issue.category.replaceAll("_", " ")}</b><small>{issue.evidence} {issue.recommended_action}</small></span><em>{Math.round(issue.score)}</em></div>)}</section>;
+}

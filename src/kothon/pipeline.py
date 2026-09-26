@@ -223,6 +223,7 @@ def run_pipeline(
         bengali_vtt=render_vtt(bengali_cards),
         english_srt=render_srt(english_cards),
         hindi_srt=render_srt(hindi_cards),
+        bengali_lines=[card.lines for card in bengali_cards],
         english_lines=[[line] for line in translated["en"]],
         hindi_lines=[[line] for line in translated["hi"]],
         qc_report=qc.model_dump(mode="json"),

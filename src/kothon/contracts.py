@@ -138,6 +138,7 @@ class PipelineResult(StrictModel):
     bengali_vtt: str = ""
     english_srt: str = ""
     hindi_srt: str = ""
+    bengali_lines: list[list[str]] = Field(default_factory=list)
     english_lines: list[list[str]] = Field(default_factory=list)
     hindi_lines: list[list[str]] = Field(default_factory=list)
     qc_report: dict[str, object] = Field(default_factory=dict)
