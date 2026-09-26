@@ -162,16 +162,21 @@ function Workspace({ onBack }: { onBack: () => void }) {
       const { run_id: runId } = await created.json();
       setLiveEvents([]);
       let status = "queued";
-      for (let attempt = 0; attempt < 120; attempt += 1) {
+      // Long videos are intentionally asynchronous. A 25-minute source can
+      // require many provider requests on the free tier, so do not turn a
+      // healthy queued/running job into a false client-side failure.
+      const maxPolls = 60 * 60 * 2;
+      for (let attempt = 0; attempt < maxPolls; attempt += 1) {
         const statusResponse = await fetch(`${API}/runs/${runId}`);
+        if (!statusResponse.ok) throw new Error("The API lost this run while it was processing.");
         const statusPayload = await statusResponse.json();
         status = statusPayload.status;
         setLiveEvents(statusPayload.events ?? []);
         if (status === "completed") break;
         if (status === "failed") throw new Error(statusPayload.error ?? "The pipeline failed.");
-        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
       }
-      if (status !== "completed") throw new Error("The pipeline timed out while processing.");
+      if (status !== "completed") throw new Error("This run exceeded the two-hour safety window. The backend may still be processing it; refresh and inspect the run status.");
       const result = await fetch(`${API}/runs/${runId}/result`);
       if (!result.ok) throw new Error("The run did not produce a report.");
       setReport(await result.json());
@@ -207,7 +212,7 @@ function Workspace({ onBack }: { onBack: () => void }) {
         </div>
         <div className="evidence-card">
           <div className="card-label"><span>02</span><span>Evidence ledger</span></div>
-          {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage…" : "Your run will appear here as a reviewable record."}</p>{state === "running" && <ProgressRail events={liveEvents} />}</div>}
+          {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage… Long media can take several minutes on the free tier." : "Your run will appear here as a reviewable record."}</p>{state === "running" && <ProgressRail events={liveEvents} />}</div>}
           {report && <>
     <div className="stat-grid"><Stat label="cues" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="review queue" value={report.qc_report?.review_queue?.length ?? 0} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
     <div className="run-note"><span className="run-dot" /> {report.mode === "fixture" ? "Fixture run · structure and QC are live; add GROQ_API_KEY for media transcription" : "Live Groq run · provider output preserved for review"}</div>
