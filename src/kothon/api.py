@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from kothon.config import KothonConfig, load_runtime_config
+from kothon.config import KothonConfig, ProviderConfig, load_runtime_config
 from kothon.contracts import PipelineResult, TraceEvent
 from kothon.media import MediaError, inspect_media
 from kothon.pipeline import run_pipeline
@@ -27,9 +27,10 @@ def _execute_run(run_id: str, media_path: Path) -> None:
         RUNS[run_id].setdefault("events", []).append(event)
 
     try:
+        config = runtime_config()
         result = run_pipeline(
             media_path,
-            runtime_config(),
+            config,
             run_id=run_id,
             event_sink=receive_event,
         )
@@ -37,10 +38,22 @@ def _execute_run(run_id: str, media_path: Path) -> None:
             "status": "completed",
             "result": result,
             "events": result.trace,
+            "mode": "groq" if "groq" in config.providers.model_dump().values() else "fixture",
         }
     except Exception as exc:
-        RUNS[run_id]["status"] = "failed"
-        RUNS[run_id]["error"] = str(exc)
+        if os.getenv("KOTHON_DEMO_FALLBACK_FIXTURE", "false").lower() == "true":
+            fallback_config = config.model_copy(update={"providers": ProviderConfig()})
+            result = run_pipeline(media_path, fallback_config, run_id=run_id)
+            RUNS[run_id] = {
+                "status": "completed",
+                "result": result,
+                "events": result.trace,
+                "mode": "fixture-fallback",
+                "warning": f"Groq was unavailable; fixture mode was used: {exc}",
+            }
+        else:
+            RUNS[run_id]["status"] = "failed"
+            RUNS[run_id]["error"] = str(exc)
     finally:
         media_path.unlink(missing_ok=True)
 
@@ -126,11 +139,11 @@ def create_app() -> FastAPI:
         result = cast(PipelineResult, run["result"])
         payload = result.report.model_dump(mode="json")
         active_config = runtime_config()
-        payload["mode"] = (
-            "groq"
-            if "groq" in active_config.providers.model_dump().values()
-            else "fixture"
+        default_mode = (
+            "groq" if "groq" in active_config.providers.model_dump().values() else "fixture"
         )
+        payload["mode"] = run.get("mode", default_mode)
+        payload["warning"] = run.get("warning")
         payload["qc_report"] = result.qc_report
         payload["tracks"] = {
             "bn": result.bengali_lines or [card.card.lines for card in result.report.cards],

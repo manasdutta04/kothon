@@ -91,7 +91,10 @@ class GroqClient:
                     "Groq text request is too large (HTTP 413). "
                     "Reduce the configured text batch size or segment duration."
                 )
-            raise RuntimeError(f"Groq request failed with HTTP {response.status_code}")
+            raise RuntimeError(
+                f"Groq request failed with HTTP {response.status_code}: "
+                f"{self._response_detail(response)}"
+            )
         data = response.json()
         if not isinstance(data, dict):
             raise RuntimeError("Groq returned an invalid JSON object")
@@ -145,6 +148,22 @@ class GroqClient:
         except ValueError:
             return 3.1
 
+    @staticmethod
+    def _response_detail(response: httpx.Response) -> str:
+        """Expose provider diagnostics without leaking authorization headers."""
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                error = payload.get("error", payload)
+                if isinstance(error, dict):
+                    message = error.get("message") or error.get("error")
+                    if isinstance(message, str):
+                        return message[:300]
+            text = response.text.strip()
+            return text[:300] or "provider returned no error details"
+        except (ValueError, UnicodeDecodeError):
+            return "provider returned an unreadable error body"
+
     def transcribe(self, media_path: Path, language_hint: str) -> Transcript:
         self._require(self.transcription_model)
         # Groq's speech endpoint has a per-request upload ceiling.  Decode
@@ -187,7 +206,10 @@ class GroqClient:
                 },
             )
         if response.is_error:
-            raise RuntimeError(f"Groq transcription failed with HTTP {response.status_code}")
+            raise RuntimeError(
+                f"Groq transcription failed with HTTP {response.status_code}: "
+                f"{self._response_detail(response)}"
+            )
         raw = response.json()
         if not isinstance(raw, dict):
             raise RuntimeError("Groq returned an invalid transcription object")
