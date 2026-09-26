@@ -36,6 +36,7 @@ class Violation(StrEnum):
     MIN_DURATION = "min_duration"
     MAX_DURATION = "max_duration"
     MAX_CPS = "max_cps"
+    TIMESTAMP_OVERLAP = "timestamp_overlap"
     NONE = "none"
 
 
