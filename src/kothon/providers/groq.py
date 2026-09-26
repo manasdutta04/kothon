@@ -5,7 +5,9 @@ package remains easy to test and the provider's wire contract is explicit.
 """
 
 import json
+import mimetypes
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,7 @@ class GroqClient:
         transcription_model: str | None = None,
         text_model: str | None = None,
         timeout: float = 60.0,
+        max_retries: int = 2,
         client: httpx.Client | None = None,
         base_url: str = "https://api.groq.com/openai",
     ) -> None:
@@ -46,6 +49,7 @@ class GroqClient:
         self.text_model: str = text_model or os.getenv("GROQ_TEXT_MODEL") or ""
         self.base_url = base_url.rstrip("/")
         self.client = client or httpx.Client(timeout=timeout)
+        self.max_retries = max_retries
 
     def _require(self, model: str) -> None:
         if not self.api_key:
@@ -57,8 +61,8 @@ class GroqClient:
         return {"Authorization": f"Bearer {self.api_key}"}
 
     def _json_request(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.client.post(
-            f"{self.base_url}/{endpoint.lstrip('/')}",
+        response = self._request_with_retries(
+            endpoint,
             headers={**self._headers(), "Content-Type": "application/json"},
             json=payload,
         )
@@ -69,11 +73,34 @@ class GroqClient:
             raise RuntimeError("Groq returned an invalid JSON object")
         return data
 
+    def _request_with_retries(self, endpoint: str, **kwargs: Any) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.client.post(
+                    f"{self.base_url}/{endpoint.lstrip('/')}",
+                    **kwargs,
+                )
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < self.max_retries:
+                        time.sleep(0.2 * (2**attempt))
+                        continue
+                return response
+            except httpx.TransportError as exc:
+                last_error = exc
+                if attempt < self.max_retries:
+                    time.sleep(0.2 * (2**attempt))
+                    continue
+                raise RuntimeError("Groq request failed due to a transport error") from exc
+        if last_error is not None:
+            raise RuntimeError("Groq request failed due to a transport error") from last_error
+        raise RuntimeError("Groq request failed without a response")
+
     def transcribe(self, media_path: Path, language_hint: str) -> Transcript:
         self._require(self.transcription_model)
         with media_path.open("rb") as media:
-            response = self.client.post(
-                f"{self.base_url}/audio/transcriptions",
+            response = self._request_with_retries(
+                "audio/transcriptions",
                 headers=self._headers(),
                 data={
                     "model": self.transcription_model,
@@ -81,7 +108,13 @@ class GroqClient:
                     "response_format": "verbose_json",
                     "timestamp_granularities[]": ["segment", "word"],
                 },
-                files={"file": (media_path.name, media, "application/octet-stream")},
+                files={
+                    "file": (
+                        media_path.name,
+                        media,
+                        mimetypes.guess_type(media_path.name)[0] or "application/octet-stream",
+                    )
+                },
             )
         if response.is_error:
             raise RuntimeError(f"Groq transcription failed with HTTP {response.status_code}")
@@ -97,7 +130,7 @@ class GroqClient:
                 raise RuntimeError("Groq returned an invalid transcription segment")
             text = str(segment.get("text", "")).strip()
             words = segment.get("words", [])
-            confidence = float(segment.get("avg_logprob", 0.0))
+            confidence = float(segment.get("avg_logprob") or 0.0)
             confidence = max(0.0, min(1.0, (confidence + 1.0)))
             normalized.append(
                 {
@@ -105,7 +138,7 @@ class GroqClient:
                     "text": text,
                     "start": float(segment.get("start", 0)),
                     "end": float(segment.get("end", 0)),
-                    "confidence": float(segment.get("confidence", confidence)),
+                    "confidence": float(segment.get("confidence") or confidence),
                     "contains_code_mixing": any(
                         any("a" <= char.lower() <= "z" for char in str(word.get("word", "")))
                         for word in words if isinstance(word, dict)
@@ -116,7 +149,7 @@ class GroqClient:
                             "start": float(word.get("start") or segment.get("start") or 0.0),
                             "end": float(word.get("end") or segment.get("end") or 0.0),
                             "alignment_method": "provider_word_timestamp",
-                            "confidence": float(word.get("confidence", 0.8)),
+                            "confidence": float(word.get("confidence") or 0.8),
                         }
                         for word in words
                         if isinstance(word, dict) and str(word.get("word", "")).strip()
@@ -194,4 +227,9 @@ class GroqClient:
             "source_cue_id, and translation_confidence.",
             {"card": card.model_dump(), "target_language": language},
         )
-        return TranslatedCue.model_validate(raw)
+        translated = TranslatedCue.model_validate(raw)
+        if translated.cue_id != card.card_id or translated.source_cue_id != card.card_id:
+            raise RuntimeError("Groq translation changed the source cue ID")
+        if translated.language != language:
+            raise RuntimeError("Groq translation returned the wrong target language")
+        return translated

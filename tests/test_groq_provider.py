@@ -30,3 +30,26 @@ def test_structured_text_validates_provider_response() -> None:
 
     assert client.structured_text("system", {"value": 1}) == {"ok": True}
 
+
+def test_structured_text_retries_transient_provider_failure() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"ok": true}'}}]},
+        )
+
+    client = GroqClient(
+        api_key="test-key",
+        text_model="text-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=1,
+    )
+
+    assert client.structured_text("system", {"value": 1}) == {"ok": True}
+    assert attempts == 2
