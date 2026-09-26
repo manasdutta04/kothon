@@ -1,6 +1,7 @@
 """Thin HTTP interface over the Kothon pipeline."""
 
 import json
+import os
 import tempfile
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -10,11 +11,20 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 
-from kothon.config import load_config
+from kothon.config import KothonConfig, load_config
 from kothon.contracts import PipelineResult
 from kothon.pipeline import run_pipeline
 
 RUNS: dict[str, Any] = {}
+
+
+def runtime_config() -> KothonConfig:
+    configured = os.getenv("KOTHON_CONFIG_PATH")
+    if configured:
+        return load_config(Path(configured))
+    if os.getenv("GROQ_API_KEY"):
+        return load_config(Path("config/groq.yaml"))
+    return load_config(Path("config/default.yaml"))
 
 
 def create_app() -> FastAPI:
@@ -44,7 +54,7 @@ def create_app() -> FastAPI:
         try:
             result = run_pipeline(
                 media_path,
-                load_config(Path("config/default.yaml")),
+                runtime_config(),
                 run_id=run_id,
             )
             RUNS[run_id] = {"status": "completed", "result": result}

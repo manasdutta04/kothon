@@ -81,7 +81,7 @@ def run_pipeline(
     proposed = segmentation_provider.segment(transcription, config.subtitle_rules)
     reports: list[CardReport] = []
     final_cards: list[SubtitleCard] = []
-    translation_provider = FixtureTranslationProvider()
+    translation_provider = groq if groq is not None else FixtureTranslationProvider()
     translated: dict[str, list[str]] = {"en": [], "hi": []}
     issues: list[QCIssue] = []
 

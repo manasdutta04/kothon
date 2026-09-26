@@ -1,5 +1,6 @@
 """Command-line entry point."""
 
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -25,7 +26,7 @@ def run(media: Path) -> None:
     """Run the configured pipeline and write subtitle/report outputs."""
     if not media.exists():
         raise typer.BadParameter(f"Media file does not exist: {media}")
-    config = load_config(Path("config/default.yaml"))
+    config = load_config(Path(os.getenv("KOTHON_CONFIG_PATH", "config/default.yaml")))
     result = run_pipeline(media, config)
     output = Path("output")
     output.mkdir(exist_ok=True)

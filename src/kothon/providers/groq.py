@@ -18,6 +18,7 @@ from kothon.contracts import (
     SubtitleCard,
     TaggingResult,
     Transcript,
+    TranslatedCue,
 )
 
 
@@ -74,7 +75,12 @@ class GroqClient:
             response = self.client.post(
                 f"{self.base_url}/audio/transcriptions",
                 headers=self._headers(),
-                data={"model": self.transcription_model, "language": language_hint},
+                data={
+                    "model": self.transcription_model,
+                    "language": language_hint,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities[]": ["segment", "word"],
+                },
                 files={"file": (media_path.name, media, "application/octet-stream")},
             )
         if response.is_error:
@@ -90,14 +96,20 @@ class GroqClient:
             if not isinstance(segment, dict):
                 raise RuntimeError("Groq returned an invalid transcription segment")
             text = str(segment.get("text", "")).strip()
+            words = segment.get("words", [])
+            confidence = float(segment.get("avg_logprob", 0.0))
+            confidence = max(0.0, min(1.0, (confidence + 1.0)))
             normalized.append(
                 {
                     "segment_id": f"segment-{index + 1:04d}",
                     "text": text,
                     "start": float(segment.get("start", 0)),
                     "end": float(segment.get("end", 0)),
-                    "confidence": float(segment.get("confidence", 0.0)),
-                    "contains_code_mixing": False,
+                    "confidence": float(segment.get("confidence", confidence)),
+                    "contains_code_mixing": any(
+                        any("a" <= char.lower() <= "z" for char in str(word.get("word", "")))
+                        for word in words if isinstance(word, dict)
+                    ),
                 }
             )
         return Transcript.model_validate({"segments": normalized})
@@ -164,3 +176,11 @@ class GroqClient:
             {"card": card.model_dump()},
         )
         return ComplianceResult.model_validate(raw)
+
+    def translate(self, card: SubtitleCard, language: str) -> TranslatedCue:
+        raw = self.structured_text(
+            "Translate this cue and return strict JSON with cue_id, language, lines, "
+            "source_cue_id, and translation_confidence.",
+            {"card": card.model_dump(), "target_language": language},
+        )
+        return TranslatedCue.model_validate(raw)
