@@ -25,6 +25,8 @@ def extract_evidence(
     previous_spectrum: np.ndarray | None = None
     for index, activity in enumerate(normalized):
         frame = frames[index]
+        if len(frame) < frame_size:
+            frame = np.pad(frame, (0, frame_size - len(frame)))
         window = frame * np.hanning(len(frame))
         spectrum = np.abs(np.fft.rfft(window))
         spectrum = spectrum / max(float(np.sum(spectrum)), 1e-9)

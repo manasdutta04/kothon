@@ -42,15 +42,19 @@ def _execute_run(run_id: str, media_path: Path) -> None:
         }
     except Exception as exc:
         if os.getenv("KOTHON_DEMO_FALLBACK_FIXTURE", "false").lower() == "true":
-            fallback_config = config.model_copy(update={"providers": ProviderConfig()})
-            result = run_pipeline(media_path, fallback_config, run_id=run_id)
-            RUNS[run_id] = {
-                "status": "completed",
-                "result": result,
-                "events": result.trace,
-                "mode": "fixture-fallback",
-                "warning": f"Groq was unavailable; fixture mode was used: {exc}",
-            }
+            try:
+                fallback_config = config.model_copy(update={"providers": ProviderConfig()})
+                result = run_pipeline(media_path, fallback_config, run_id=run_id)
+                RUNS[run_id] = {
+                    "status": "completed",
+                    "result": result,
+                    "events": result.trace,
+                    "mode": "fixture-fallback",
+                    "warning": f"Groq was unavailable; fixture mode was used: {exc}",
+                }
+            except Exception as fallback_exc:
+                RUNS[run_id]["status"] = "failed"
+                RUNS[run_id]["error"] = f"Groq failed: {exc}; fallback failed: {fallback_exc}"
         else:
             RUNS[run_id]["status"] = "failed"
             RUNS[run_id]["error"] = str(exc)
