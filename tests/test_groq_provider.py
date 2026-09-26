@@ -54,7 +54,25 @@ def test_structured_text_retries_transient_provider_failure() -> None:
         text_model="text-model",
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         max_retries=1,
+        request_interval_seconds=0,
     )
 
     assert client.structured_text("system", {"value": 1}) == {"ok": True}
     assert attempts == 2
+
+
+def test_rate_limit_error_is_explicit_after_bounded_retries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(429, headers={"retry-after": "0"})
+
+    client = GroqClient(
+        api_key="test-key",
+        text_model="text-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=1,
+        request_interval_seconds=0,
+    )
+
+    with pytest.raises(RuntimeError, match="rate limit reached"):
+        client.structured_text("system", {"value": 1})

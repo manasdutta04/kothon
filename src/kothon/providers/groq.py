@@ -41,6 +41,7 @@ class GroqClient:
         text_model: str | None = None,
         timeout: float = 60.0,
         max_retries: int = 2,
+        request_interval_seconds: float | None = None,
         client: httpx.Client | None = None,
         base_url: str = "https://api.groq.com/openai/v1",
     ) -> None:
@@ -58,6 +59,12 @@ class GroqClient:
         self.base_url = base_url.rstrip("/")
         self.client = client or httpx.Client(timeout=timeout)
         self.max_retries = max_retries
+        self.request_interval_seconds = (
+            float(os.getenv("GROQ_MIN_REQUEST_INTERVAL_SECONDS", "3.1"))
+            if request_interval_seconds is None
+            else request_interval_seconds
+        )
+        self._last_request_at = 0.0
 
     def _require(self, model: str) -> None:
         if not self.api_key:
@@ -85,14 +92,31 @@ class GroqClient:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
+                elapsed = time.monotonic() - self._last_request_at
+                wait_for_interval = self.request_interval_seconds - elapsed
+                if wait_for_interval > 0:
+                    time.sleep(wait_for_interval)
                 response = self.client.post(
                     f"{self.base_url}/{endpoint.lstrip('/')}",
                     **kwargs,
                 )
-                if response.status_code == 429 or response.status_code >= 500:
+                self._last_request_at = time.monotonic()
+                if response.status_code == 429:
                     if attempt < self.max_retries:
-                        time.sleep(0.2 * (2**attempt))
+                        time.sleep(
+                            max(
+                                self._retry_after_seconds(response),
+                                self.request_interval_seconds,
+                            )
+                        )
                         continue
+                    raise RuntimeError(
+                        "Groq rate limit reached (HTTP 429). Wait for the free-tier quota "
+                        "to reset, then retry the run."
+                    )
+                if response.status_code >= 500 and attempt < self.max_retries:
+                    time.sleep(max(1.0, self.request_interval_seconds) * (2**attempt))
+                    continue
                 return response
             except httpx.TransportError as exc:
                 last_error = exc
@@ -103,6 +127,14 @@ class GroqClient:
         if last_error is not None:
             raise RuntimeError("Groq request failed due to a transport error") from last_error
         raise RuntimeError("Groq request failed without a response")
+
+    @staticmethod
+    def _retry_after_seconds(response: httpx.Response) -> float:
+        value = response.headers.get("retry-after", "")
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            return 3.1
 
     def transcribe(self, media_path: Path, language_hint: str) -> Transcript:
         self._require(self.transcription_model)
