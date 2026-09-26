@@ -73,8 +73,8 @@ def create_app() -> FastAPI:
         payload["qc_report"] = result.qc_report
         payload["tracks"] = {
             "bn": [card.card.lines for card in result.report.cards],
-            "en": [[result.english_srt] for _ in result.report.cards],
-            "hi": [[result.hindi_srt] for _ in result.report.cards],
+            "en": result.english_lines,
+            "hi": result.hindi_lines,
         }
         return payload
 
