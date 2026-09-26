@@ -110,3 +110,18 @@ class PipelineSummary(StrictModel):
     cards_corrected: int = 0
     cards_with_unresolved_violations: int = 0
     cards_with_sensitivity_flags: int = 0
+
+
+class CardReport(StrictModel):
+    card: SubtitleCard
+    verification: VerificationRecord | None = None
+    tagging: TaggingResult | None = None
+    compliance: ComplianceResult | None = None
+    transcription_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class PipelineReport(StrictModel):
+    run_id: str
+    language_hint: str
+    cards: list[CardReport]
+    summary: PipelineSummary
