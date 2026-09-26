@@ -21,6 +21,8 @@ class ProviderConfig(BaseModel):
     correction: str = "fixture"
     tagging: str = "fixture"
     compliance: str = "fixture"
+    transcription_model: str = ""
+    text_model: str = ""
 
 
 class RuntimeConfig(BaseModel):
@@ -45,4 +47,3 @@ def load_config(path: Path) -> KothonConfig:
     """Load and validate a YAML configuration file."""
     raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return KothonConfig.model_validate(raw)
-
