@@ -10,7 +10,7 @@ def test_fixture_pipeline_produces_all_primary_outputs(tmp_path: Path) -> None:
     result = run_pipeline(media, load_config(Path("config/default.yaml")), run_id="run-test")
 
     assert result.report.run_id == "run-test"
-    assert result.report.summary.total_cards == 1
+    assert result.report.summary.total_cards == 3
     assert "WEBVTT" in result.vtt
     assert "বাংলা" in result.bengali_vtt
     assert "This is a Bengali subtitle demo." in result.english_srt

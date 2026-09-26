@@ -110,6 +110,17 @@ class GroqClient:
                         any("a" <= char.lower() <= "z" for char in str(word.get("word", "")))
                         for word in words if isinstance(word, dict)
                     ),
+                    "words": [
+                        {
+                            "text": str(word.get("word", "")).strip(),
+                            "start": float(word.get("start") or segment.get("start") or 0.0),
+                            "end": float(word.get("end") or segment.get("end") or 0.0),
+                            "alignment_method": "provider_word_timestamp",
+                            "confidence": float(word.get("confidence", 0.8)),
+                        }
+                        for word in words
+                        if isinstance(word, dict) and str(word.get("word", "")).strip()
+                    ],
                 }
             )
         return Transcript.model_validate({"segments": normalized})

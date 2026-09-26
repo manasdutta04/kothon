@@ -25,10 +25,26 @@ class FixtureTranscriptionProvider:
                     segment_id="segment-0001",
                     text="এটা একটি বাংলা subtitle demo.",
                     start=0,
-                    end=2.5,
+                    end=2.2,
                     confidence=0.98,
                     contains_code_mixing=True,
-                )
+                ),
+                TranscriptSegment(
+                    segment_id="segment-0002",
+                    text="ওর office-এ একটা meeting আছে।",
+                    start=2.2,
+                    end=4.6,
+                    confidence=0.91,
+                    contains_code_mixing=True,
+                ),
+                TranscriptSegment(
+                    segment_id="segment-0003",
+                    text="সবাই ready তো?",
+                    start=4.6,
+                    end=6.2,
+                    confidence=0.88,
+                    contains_code_mixing=True,
+                ),
             ]
         )
 

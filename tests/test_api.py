@@ -16,5 +16,4 @@ def test_health_and_fixture_run_api() -> None:
     run_id = response.json()["run_id"]
     assert client.get(f"/api/runs/{run_id}").json()["status"] == "completed"
     assert "WEBVTT" in client.get(f"/api/runs/{run_id}/files/vtt").text
-    assert client.get(f"/api/runs/{run_id}/result").json()["summary"]["total_cards"] == 1
-
+    assert client.get(f"/api/runs/{run_id}/result").json()["summary"]["total_cards"] == 3
