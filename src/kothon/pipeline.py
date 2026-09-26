@@ -212,6 +212,27 @@ def run_pipeline(
                 recommended_action="Listen to the source before approving the cue.",
                 affected_tracks=["bn", "en", "hi"],
             ))
+        if (
+            supporting_audio
+            and any(item.evidence_type == "music_candidate" for item in supporting_audio)
+            and not any(item.evidence_type == "speech_activity" for item in supporting_audio)
+        ):
+            issues.append(QCIssue(
+                issue_id=f"qc-{final_card.card_id}-music",
+                severity="critical",
+                score=95,
+                category="hallucination_over_music",
+                cue_id=final_card.card_id,
+                start=final_card.start,
+                end=final_card.end,
+                evidence=(
+                    "The cue overlaps audio classified as music candidate without speech activity."
+                ),
+                recommended_action=(
+                    "Listen to the source and remove the cue unless speech is audible."
+                ),
+                affected_tracks=["bn", "en", "hi"],
+            ))
         if original.reading_speed_cps > config.subtitle_rules.max_reading_speed_cps:
             issues.append(QCIssue(
                 issue_id=f"qc-{final_card.card_id}-cps", severity="medium", score=60,
