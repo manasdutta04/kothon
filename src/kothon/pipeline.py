@@ -33,6 +33,7 @@ from kothon.providers.fixtures import (
     FixtureTranslationProvider,
 )
 from kothon.providers.groq import GroqClient
+from kothon.providers.local import DeterministicSegmentationProvider
 from kothon.speech.alignment import align_segment_words
 from kothon.speech.diarization import diarize
 from kothon.verification.rules import check_card
@@ -72,9 +73,11 @@ def run_pipeline(
         if config.providers.transcription == "groq" and groq is not None
         else FixtureTranscriptionProvider()
     )
+    # Segmentation is deterministic and runs over the real ASR transcript.
+    # This avoids a fragile large JSON generation call and cannot invent text.
     segmentation_provider = (
-        groq
-        if config.providers.segmentation == "groq" and groq is not None
+        DeterministicSegmentationProvider()
+        if config.providers.transcription == "groq" and groq is not None
         else FixtureSegmentationProvider()
     )
     correction_provider = (
@@ -128,8 +131,10 @@ def run_pipeline(
     proposed = segmentation_provider.segment(transcription, config.subtitle_rules)
     record_trace(
         "segmentation",
-        config.providers.segmentation,
-        config.providers.text_model or None,
+        "local" if isinstance(segmentation_provider, DeterministicSegmentationProvider)
+        else config.providers.segmentation,
+        None if isinstance(segmentation_provider, DeterministicSegmentationProvider)
+        else config.providers.text_model or None,
         {"cards": [card.model_dump(mode="json") for card in proposed]},
         segmentation_started,
     )
