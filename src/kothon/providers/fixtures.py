@@ -12,6 +12,7 @@ from kothon.contracts import (
     TaggingResult,
     Transcript,
     TranscriptSegment,
+    TranslatedCue,
 )
 
 
@@ -68,3 +69,18 @@ class FixtureTaggingProvider:
 class FixtureComplianceProvider:
     def analyze(self, card: SubtitleCard) -> ComplianceResult:
         return ComplianceResult(card_id=card.card_id, flags=[])
+
+
+class FixtureTranslationProvider:
+    def translate(self, card: SubtitleCard, language: str) -> TranslatedCue:
+        text = {
+            "en": "This is a Bengali subtitle demo.",
+            "hi": "यह एक बंगाली उपशीर्षक डेमो है।",
+        }[language]
+        return TranslatedCue(
+            cue_id=card.card_id,
+            language=language,
+            lines=[text],
+            source_cue_id=card.card_id,
+            translation_confidence=0.75,
+        )

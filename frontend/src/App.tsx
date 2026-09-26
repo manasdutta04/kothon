@@ -14,6 +14,8 @@ type Report = {
     tagging?: { non_speech_tags: string[]; speaker_label: string | null; low_confidence: boolean };
     compliance?: { flags: Array<{ category: string; triggering_text: string }> };
   }>;
+  qc_report?: { review_queue: Array<{ category: string; score: number; evidence: string }> };
+  tracks?: { bn: string[][]; en: string[][]; hi: string[][] };
 };
 
 const API = "http://127.0.0.1:8000/api";
@@ -23,6 +25,7 @@ export function App() {
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState("");
+  const [track, setTrack] = useState<"bn" | "en" | "hi">("bn");
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     setFile(event.target.files?.[0] ?? null);
@@ -79,8 +82,9 @@ export function App() {
           {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage…" : "Your run will appear here as a reviewable record."}</p></div>}
           {report && <>
             <div className="stat-grid"><Stat label="cards" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
-            <div className="card-list">{report.cards.map((item, index) => <article className="subtitle-card" key={index}><div className="time">{item.card.start.toFixed(2)} — {item.card.end.toFixed(2)}s</div><p>{item.card.lines.map((line) => <span key={line}>{line}</span>)}</p><div className="chips"><span className={item.verification?.verified ? "chip good" : "chip warn"}>{item.verification?.verified ? "verified" : "review"}</span>{item.tagging?.low_confidence && <span className="chip warn">low confidence</span>}{item.compliance?.flags.map((flag) => <span className="chip danger" key={flag.triggering_text}>{flag.category}</span>)}</div></article>)}</div>
-            <div className="downloads"><a href={`${API}/runs/${report.run_id}/files/srt`}>SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/vtt`}>VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/json`}>Trace JSON ↗</a></div>
+            <div className="track-switcher"><button className={track === "bn" ? "active" : ""} onClick={() => setTrack("bn")}>বাংলা CC</button><button className={track === "en" ? "active" : ""} onClick={() => setTrack("en")}>English</button><button className={track === "hi" ? "active" : ""} onClick={() => setTrack("hi")}>हिन्दी</button></div>
+            <div className="card-list">{report.cards.map((item, index) => <article className="subtitle-card" key={index}><div className="time">{item.card.start.toFixed(2)} — {item.card.end.toFixed(2)}s</div><p>{(report.tracks?.[track]?.[index] ?? item.card.lines).map((line) => <span key={line}>{line}</span>)}</p><div className="chips"><span className={item.verification?.verified ? "chip good" : "chip warn"}>{item.verification?.verified ? "verified" : "review"}</span>{item.tagging?.speaker_label && <span className="chip">{item.tagging.speaker_label}</span>}{item.tagging?.low_confidence && <span className="chip warn">low confidence</span>}{item.compliance?.flags.map((flag) => <span className="chip danger" key={flag.triggering_text}>{flag.category}</span>)}</div></article>)}</div>
+            <div className="qc-strip">{report.qc_report?.review_queue?.length ?? 0} review items ranked by risk</div><div className="downloads"><a href={`${API}/runs/${report.run_id}/files/bengali-vtt`}>Bengali VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/english-srt`}>English SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/hindi-srt`}>Hindi SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/qc-json`}>QC JSON ↗</a></div>
           </>}
         </div>
       </section>

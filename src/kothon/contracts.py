@@ -131,6 +131,10 @@ class PipelineResult(StrictModel):
     report: PipelineReport
     srt: str
     vtt: str
+    bengali_vtt: str = ""
+    english_srt: str = ""
+    hindi_srt: str = ""
+    qc_report: dict[str, object] = Field(default_factory=dict)
 
 
 class MediaMetadata(StrictModel):
@@ -157,3 +161,29 @@ class AudioEvidence(StrictModel):
     music_score: float = Field(ge=0, le=1)
     transition_score: float = Field(ge=0, le=1)
     evidence_type: str
+
+
+class TranslatedCue(StrictModel):
+    cue_id: str
+    language: str
+    lines: list[str]
+    source_cue_id: str
+    translation_confidence: float = Field(ge=0, le=1)
+
+
+class QCIssue(StrictModel):
+    issue_id: str
+    severity: str
+    score: float = Field(ge=0)
+    category: str
+    cue_id: str | None = None
+    start: float | None = None
+    end: float | None = None
+    evidence: str
+    recommended_action: str
+    affected_tracks: list[str]
+
+
+class QCReport(StrictModel):
+    issues: list[QCIssue]
+    review_queue: list[QCIssue]

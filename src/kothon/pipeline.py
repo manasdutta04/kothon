@@ -9,6 +9,8 @@ from kothon.config import KothonConfig
 from kothon.contracts import (
     CardReport,
     PipelineResult,
+    QCIssue,
+    QCReport,
     SubtitleCard,
     VerificationRecord,
     Violation,
@@ -19,6 +21,7 @@ from kothon.providers.fixtures import (
     FixtureSegmentationProvider,
     FixtureTaggingProvider,
     FixtureTranscriptionProvider,
+    FixtureTranslationProvider,
 )
 from kothon.providers.groq import GroqClient
 from kothon.verification.rules import check_card
@@ -78,6 +81,9 @@ def run_pipeline(
     proposed = segmentation_provider.segment(transcription, config.subtitle_rules)
     reports: list[CardReport] = []
     final_cards: list[SubtitleCard] = []
+    translation_provider = FixtureTranslationProvider()
+    translated: dict[str, list[str]] = {"en": [], "hi": []}
+    issues: list[QCIssue] = []
 
     confidence_by_segment = {
         segment.segment_id: segment.confidence for segment in transcription.segments
@@ -98,6 +104,20 @@ def run_pipeline(
         )
         tagging = tagging_provider.tag(final_card, {})
         compliance = compliance_provider.analyze(final_card)
+        if tagging.speaker_label is None:
+            tagging.speaker_label = "Speaker 1"
+        if original.reading_speed_cps > config.subtitle_rules.max_reading_speed_cps:
+            issues.append(QCIssue(
+                issue_id=f"qc-{final_card.card_id}-cps", severity="medium", score=60,
+                category="cps", cue_id=final_card.card_id, start=final_card.start,
+                end=final_card.end, evidence=f"Measured {original.reading_speed_cps:.2f} CPS.",
+                recommended_action="Review line breaks or timing.",
+                affected_tracks=["bn", "en", "hi"],
+            ))
+        for language in translated:
+            translated[language].append(
+                translation_provider.translate(final_card, language).lines[0]
+            )
         reports.append(
             CardReport(
                 card=final_card,
@@ -112,4 +132,33 @@ def run_pipeline(
         final_cards.append(final_card)
 
     report = build_report(run_id or str(uuid4()), config.language_hint, reports)
-    return PipelineResult(report=report, srt=render_srt(final_cards), vtt=render_vtt(final_cards))
+    speaker_labels = [
+        item.tagging.speaker_label if item.tagging else "Speaker 1" for item in reports
+    ]
+    bengali_cards = [
+        card.model_copy(
+            update={"lines": [f"[{speaker_labels[index]}] {line}" for line in card.lines]}
+        )
+        for index, card in enumerate(final_cards)
+    ]
+    english_cards = [
+        card.model_copy(update={"lines": [translated["en"][index]]})
+        for index, card in enumerate(final_cards)
+    ]
+    hindi_cards = [
+        card.model_copy(update={"lines": [translated["hi"][index]]})
+        for index, card in enumerate(final_cards)
+    ]
+    qc = QCReport(
+        issues=issues,
+        review_queue=sorted(issues, key=lambda item: item.score, reverse=True),
+    )
+    return PipelineResult(
+        report=report,
+        srt=render_srt(english_cards),
+        vtt=render_vtt(bengali_cards),
+        bengali_vtt=render_vtt(bengali_cards),
+        english_srt=render_srt(english_cards),
+        hindi_srt=render_srt(hindi_cards),
+        qc_report=qc.model_dump(mode="json"),
+    )

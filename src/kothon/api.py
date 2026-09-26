@@ -1,5 +1,6 @@
 """Thin HTTP interface over the Kothon pipeline."""
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -68,7 +69,14 @@ def create_app() -> FastAPI:
         if run["status"] != "completed":
             raise HTTPException(status_code=409, detail=run.get("error", "Run not completed"))
         result = cast(PipelineResult, run["result"])
-        return result.report.model_dump(mode="json")
+        payload = result.report.model_dump(mode="json")
+        payload["qc_report"] = result.qc_report
+        payload["tracks"] = {
+            "bn": [card.card.lines for card in result.report.cards],
+            "en": [[result.english_srt] for _ in result.report.cards],
+            "hi": [[result.hindi_srt] for _ in result.report.cards],
+        }
+        return payload
 
     @app.get("/api/runs/{run_id}/files/{file_type}")
     def get_file(run_id: str, file_type: str) -> Response:
@@ -79,9 +87,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="Run not completed")
         result = cast(PipelineResult, run["result"])
         if file_type == "srt":
-            return PlainTextResponse(result.srt, media_type="application/x-subrip")
+            return PlainTextResponse(
+                result.english_srt or result.srt,
+                media_type="application/x-subrip",
+            )
         if file_type == "vtt":
-            return PlainTextResponse(result.vtt, media_type="text/vtt")
+            return PlainTextResponse(result.bengali_vtt or result.vtt, media_type="text/vtt")
+        if file_type == "bengali-vtt":
+            return PlainTextResponse(result.bengali_vtt, media_type="text/vtt")
+        if file_type == "english-srt":
+            return PlainTextResponse(result.english_srt, media_type="application/x-subrip")
+        if file_type == "hindi-srt":
+            return PlainTextResponse(result.hindi_srt, media_type="application/x-subrip")
+        if file_type == "qc-json":
+            return Response(
+                json.dumps(result.qc_report, ensure_ascii=False, indent=2),
+                media_type="application/json",
+            )
         if file_type == "json":
             return Response(result.report.model_dump_json(indent=2), media_type="application/json")
         raise HTTPException(status_code=404, detail="Unknown file type")
