@@ -19,7 +19,7 @@ from kothon.contracts import (
     VerificationRecord,
     Violation,
 )
-from kothon.media import read_audio
+from kothon.media import inspect_media, read_audio
 from kothon.providers.fixtures import (
     FixtureComplianceProvider,
     FixtureCorrectionProvider,
@@ -48,6 +48,7 @@ def run_pipeline(
     """
     if not media_path.exists():
         raise FileNotFoundError(media_path)
+    media_metadata = inspect_media(media_path).model_copy(update={"path": media_path.name})
     provider_names = config.providers.model_dump()
     groq_needed = "groq" in provider_names.values()
     groq = (
@@ -124,11 +125,8 @@ def run_pipeline(
         {"cards": [card.model_dump(mode="json") for card in proposed]},
         segmentation_started,
     )
-    try:
-        audio = read_audio(media_path)
-        audio_evidence = extract_evidence(audio)
-    except Exception:
-        audio_evidence = []
+    audio = read_audio(media_path)
+    audio_evidence = extract_evidence(audio)
     speaker_turns = diarize(transcription.segments, audio_evidence)
     reports: list[CardReport] = []
     final_cards: list[SubtitleCard] = []
@@ -273,6 +271,7 @@ def run_pipeline(
 
     assembly_started = perf_counter()
     report = build_report(run_id or str(uuid4()), config.language_hint, reports)
+    report = report.model_copy(update={"media_metadata": media_metadata})
     speaker_labels = [
         item.tagging.speaker_label if item.tagging else "Speaker 1" for item in reports
     ]

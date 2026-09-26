@@ -128,6 +128,7 @@ class CardReport(StrictModel):
 class PipelineReport(StrictModel):
     run_id: str
     language_hint: str
+    media_metadata: "MediaMetadata | None" = None
     cards: list[CardReport]
     summary: PipelineSummary
 

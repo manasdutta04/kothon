@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from kothon.config import KothonConfig, load_config
 from kothon.contracts import PipelineResult
+from kothon.media import MediaError
 from kothon.pipeline import run_pipeline
 
 RUNS: dict[str, Any] = {}
@@ -49,16 +50,34 @@ def create_app() -> FastAPI:
     async def create_run(file: Annotated[UploadFile, File(...)]) -> dict[str, str]:
         run_id = str(uuid4())
         suffix = Path(file.filename or "upload.bin").suffix
+        maximum_bytes = int(os.getenv("KOTHON_MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))
+        content = await file.read()
+        if len(content) > maximum_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "code": "upload_too_large",
+                    "message": f"Upload exceeds the {maximum_bytes} byte limit.",
+                },
+            )
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temporary:
-            temporary.write(await file.read())
+            temporary.write(content)
             media_path = Path(temporary.name)
         try:
+            if not media_path.is_file():
+                raise MediaError("Uploaded media could not be stored")
             result = run_pipeline(
                 media_path,
                 runtime_config(),
                 run_id=run_id,
             )
             RUNS[run_id] = {"status": "completed", "result": result}
+        except MediaError as exc:
+            media_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "invalid_media", "message": str(exc)},
+            ) from exc
         except Exception as exc:
             RUNS[run_id] = {"status": "failed", "error": str(exc)}
         finally:
