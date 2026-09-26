@@ -12,10 +12,12 @@ from kothon.audio import extract_evidence
 from kothon.config import KothonConfig
 from kothon.contracts import (
     CardReport,
+    ComplianceResult,
     PipelineResult,
     QCIssue,
     QCReport,
     SubtitleCard,
+    TaggingResult,
     TraceEvent,
     TranslatedCue,
     VerificationRecord,
@@ -165,14 +167,42 @@ def run_pipeline(
     translation_cache: dict[str, dict[str, TranslatedCue]] = {}
     if isinstance(translation_provider, GroqClient):
         for language in translated:
-            translation_cache[language] = translation_provider.translate_batch(
-                final_cards_for_batch, language
-            )
+            translation_cache[language] = {}
+            for start in range(0, len(final_cards_for_batch), config.runtime.text_batch_size):
+                batch = final_cards_for_batch[start : start + config.runtime.text_batch_size]
+                translation_cache[language].update(
+                    translation_provider.translate_batch(batch, language)
+                )
+    batch_features: dict[str, object] = {}
+    for final_card in final_cards_for_batch:
+        matching_turns = [
+            turn for turn in speaker_turns
+            if turn.start < final_card.end and turn.end > final_card.start
+        ]
+        card_evidence = [
+            item for item in audio_evidence
+            if item.start < final_card.end and item.end > final_card.start
+        ]
+        batch_features[final_card.card_id] = {
+            "audio_evidence": [item.model_dump(mode="json") for item in card_evidence],
+            "speaker_turns": [item.model_dump(mode="json") for item in matching_turns],
+        }
+    tagging_cache: dict[str, TaggingResult] = {}
+    compliance_cache: dict[str, ComplianceResult] = {}
+    if isinstance(groq, GroqClient):
+        for start in range(0, len(final_cards_for_batch), config.runtime.text_batch_size):
+            batch = final_cards_for_batch[start : start + config.runtime.text_batch_size]
+            tagging_cache.update(groq.tag_batch(batch, batch_features))
+            compliance_cache.update(groq.analyze_batch(batch))
     for card in proposed:
         final_card = final_cards_by_id[card.card_id]
         verification = verification_by_card[card.card_id]
         original = verification.original
-        compliance = compliance_provider.analyze(final_card)
+        compliance = (
+            compliance_cache[final_card.card_id]
+            if final_card.card_id in compliance_cache
+            else compliance_provider.analyze(final_card)
+        )
         matching_turns = [
             turn for turn in speaker_turns
             if turn.start < final_card.end and turn.end > final_card.start
@@ -192,12 +222,16 @@ def run_pipeline(
             for item in audio_evidence
             if item.start < final_card.end and item.end > final_card.start
         ]
-        tagging = tagging_provider.tag(
-            final_card,
-            {
-                "audio_evidence": [item.model_dump(mode="json") for item in card_evidence],
-                "speaker_turns": [item.model_dump(mode="json") for item in matching_turns],
-            },
+        tagging = (
+            tagging_cache[final_card.card_id]
+            if final_card.card_id in tagging_cache
+            else tagging_provider.tag(
+                final_card,
+                {
+                    "audio_evidence": [item.model_dump(mode="json") for item in card_evidence],
+                    "speaker_turns": [item.model_dump(mode="json") for item in matching_turns],
+                },
+            )
         )
         if matching_turns:
             tagging.speaker_label = matching_turns[0].speaker_id

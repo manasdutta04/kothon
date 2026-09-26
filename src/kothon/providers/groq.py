@@ -350,3 +350,47 @@ class GroqClient:
         if set(result) != expected:
             raise RuntimeError("Groq batch translation did not return every cue exactly once")
         return result
+
+    def tag_batch(
+        self, cards: list[SubtitleCard], features_by_card: dict[str, object]
+    ) -> dict[str, TaggingResult]:
+        raw = self.structured_text(
+            "Return strict JSON with a tags array. Return exactly one result per cue_id. "
+            "Only add sound tags supported by the supplied audio evidence.",
+            {
+                "cards": [
+                    {
+                        "card": card.model_dump(mode="json"),
+                        "features": features_by_card[card.card_id],
+                    }
+                    for card in cards
+                ]
+            },
+        )
+        values = raw.get("tags")
+        if not isinstance(values, list):
+            raise RuntimeError("Groq batch tagging did not contain tags")
+        result = {
+            item.card_id: item
+            for item in (TaggingResult.model_validate(value) for value in values)
+        }
+        if set(result) != {card.card_id for card in cards}:
+            raise RuntimeError("Groq batch tagging did not return every cue exactly once")
+        return result
+
+    def analyze_batch(self, cards: list[SubtitleCard]) -> dict[str, ComplianceResult]:
+        raw = self.structured_text(
+            "Return strict JSON with a compliance array. Return one result per cue_id and "
+            "cite exact triggering text for every flag.",
+            {"cards": [card.model_dump(mode="json") for card in cards]},
+        )
+        values = raw.get("compliance")
+        if not isinstance(values, list):
+            raise RuntimeError("Groq batch compliance did not contain compliance")
+        result = {
+            item.card_id: item
+            for item in (ComplianceResult.model_validate(value) for value in values)
+        }
+        if set(result) != {card.card_id for card in cards}:
+            raise RuntimeError("Groq batch compliance did not return every cue exactly once")
+        return result

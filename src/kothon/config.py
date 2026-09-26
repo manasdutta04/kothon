@@ -33,6 +33,7 @@ class RuntimeConfig(BaseModel):
     keep_trace: bool = True
     transcription_chunk_seconds: float = Field(default=90.0, gt=10, le=180)
     transcription_overlap_seconds: float = Field(default=1.5, ge=0, lt=10)
+    text_batch_size: int = Field(default=40, ge=1, le=100)
 
 
 class OutputConfig(BaseModel):
