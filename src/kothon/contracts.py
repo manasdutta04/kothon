@@ -125,3 +125,9 @@ class PipelineReport(StrictModel):
     language_hint: str
     cards: list[CardReport]
     summary: PipelineSummary
+
+
+class PipelineResult(StrictModel):
+    report: PipelineReport
+    srt: str
+    vtt: str

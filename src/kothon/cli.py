@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from kothon.config import load_config
+from kothon.pipeline import run_pipeline
 
 app = typer.Typer(help="Kothon Bengali subtitle pipeline")
 
@@ -21,10 +22,19 @@ def config_check(
 
 @app.command()
 def run(media: Path) -> None:
-    """Run the pipeline (provider orchestration is added in a later feature)."""
+    """Run the configured pipeline and write subtitle/report outputs."""
     if not media.exists():
         raise typer.BadParameter(f"Media file does not exist: {media}")
-    typer.echo("Pipeline execution is not configured yet; use config-check to validate setup.")
+    config = load_config(Path("config/default.yaml"))
+    result = run_pipeline(media, config)
+    output = Path("output")
+    output.mkdir(exist_ok=True)
+    (output / "subtitles.srt").write_text(result.srt, encoding="utf-8")
+    (output / "subtitles.vtt").write_text(result.vtt, encoding="utf-8")
+    (output / "report.json").write_text(
+        result.report.model_dump_json(indent=2), encoding="utf-8"
+    )
+    typer.echo(f"Run complete: {result.report.run_id}")
 
 
 if __name__ == "__main__":
