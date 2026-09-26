@@ -28,6 +28,51 @@ const trackNames: Record<Track, string> = { bn: "বাংলা CC", en: "Engli
 const stageNames = ["transcription", "segmentation", "verification", "accessibility", "compliance", "translation", "assembly"];
 
 export function App() {
+  const [view, setView] = useState<"landing" | "workspace">(
+    window.location.hash === "#app" ? "workspace" : "landing",
+  );
+
+  const enterWorkspace = () => {
+    window.history.replaceState({}, "", "#app");
+    setView("workspace");
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  if (view === "landing") return <LandingPage onStart={enterWorkspace} />;
+  return <Workspace onBack={() => { window.history.replaceState({}, "", ""); setView("landing"); }} />;
+}
+
+function LandingPage({ onStart }: { onStart: () => void }) {
+  const signals = [
+    ["01", "Speech signal", "Bengali-first transcription with code-mixed words intact."],
+    ["02", "Evidence ledger", "Every risky cue keeps the audio evidence that raised it."],
+    ["03", "Review queue", "The highest-risk moments arrive first, ready for a human."],
+    ["04", "Timed tracks", "One authoritative timeline, three broadcast-ready outputs."],
+  ];
+  const principles = [
+    ["01", "SIGNAL", "BEFORE CERTAINTY", "Silence and music are evidence, not blank space."],
+    ["02", "SYSTEMS", "OVER SCREENS", "A deterministic pipeline keeps decisions inspectable."],
+    ["03", "STABLE", "IDENTITIES", "Speaker IDs persist from first appearance to final cue."],
+    ["04", "REVIEW", "BY DESIGN", "Uncertainty is surfaced so editors know where to listen."],
+  ];
+  return <main className="landing-shell">
+    <div className="landing-grid" aria-hidden="true" />
+    <aside className="landing-side-nav"><span className="side-word">KOTHON</span><span className="side-index">BN / 01</span></aside>
+    <nav className="landing-nav"><span className="landing-logo">কথন</span><span className="landing-nav-copy">BENGALI CAPTION INTELLIGENCE</span><span className="landing-status"><i /> OPEN PIPELINE</span></nav>
+    <div className="landing-content">
+      <section id="landing-hero" className="landing-hero">
+        <div><span className="landing-kicker">PROBLEM 02 / SPEECH & LANGUAGE</span><h1>THE<br /><em>VOICE</em><br />REMAINS.</h1><p>Broadcast-minded Bengali captions built around evidence, stable speakers, and the moments a machine should never pretend to understand.</p><div className="landing-actions"><button onClick={onStart} className="landing-button">Get started <span>↗</span></button><a href="#landing-signals">Read the signal ↓</a></div></div>
+        <div className="landing-orb" aria-hidden="true"><span>ক</span><span>থ</span><span>ন</span><small>BN / CC</small></div>
+      </section>
+      <section id="landing-signals" className="landing-section"><div className="landing-section-head"><span>01 / Signals</span><h2>WHAT IT KEEPS</h2></div><div className="signal-strip">{signals.map(([number, title, note]) => <article className="signal-tile" key={number}><div><span>No. {number}</span><span>LIVE SYSTEM</span></div><h3>{title}</h3><b /><p>{note}</p></article>)}</div></section>
+      <section className="landing-section landing-work"><div className="landing-section-head"><span>02 / The pipeline</span><h2>FROM AUDIO<br />TO EVIDENCE</h2></div><div className="work-grid"><article className="work-feature"><span>01 — INGEST</span><strong>Listen before<br />you label.</strong><p>CPU media inspection, speech activity, timestamps and stable speaker turns form the ground truth around every cue.</p></article><article><span>02 — TRANSLATE</span><strong>Three tracks.<br />One timeline.</strong><p>বাংলা CC, English and Hindi inherit the authoritative Bengali timing.</p></article><article><span>03 — QC</span><strong>Review the<br />danger first.</strong><p>Silence hallucinations, uncertain speakers and translation risks are ranked for editors.</p></article><article><span>04 — EXPORT</span><strong>Ready to<br />ship.</strong><p>WebVTT, SRT, QC JSON and a complete trace leave together.</p></article></div></section>
+      <section className="landing-section landing-principles"><div className="landing-section-head"><span>03 / Principles</span><h2>HOW WE WORK</h2></div><div className="principle-list">{principles.map(([number, lead, tail, note], index) => <article key={number} className={index % 2 ? "align-right" : ""}><span>{number} / {lead}</span><h3><mark>{lead}</mark> {tail}</h3><p>{note}</p><i /></article>)}</div></section>
+      <section className="landing-colophon"><span>KOTHON / 2026</span><div><strong>Make uncertainty<br /><em>visible.</em></strong><button onClick={onStart}>Enter the workspace ↗</button></div><span>GROQ READY · CPU SAFE · NO LOCAL MODELS</span></section>
+    </div>
+  </main>;
+}
+
+function Workspace({ onBack }: { onBack: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [report, setReport] = useState<Report | null>(null);
@@ -76,7 +121,7 @@ export function App() {
 
   return (
     <main className="shell">
-      <nav className="topbar"><span className="mark">কথন</span><span className="eyebrow">caption intelligence / 01</span><span className="status"><i /> {report?.mode === "groq" ? "live groq pipeline" : "fixture mode"}</span></nav>
+      <nav className="topbar"><button className="back-link" onClick={onBack}>← Kothon</button><span className="mark">কথন</span><span className="eyebrow">caption intelligence / 01</span><span className="status"><i /> {report?.mode === "groq" ? "live groq pipeline" : "fixture mode"}</span></nav>
       <section className="hero">
         <div className="hero-copy">
           <p className="kicker">Bengali subtitle engineering</p>
