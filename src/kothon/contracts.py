@@ -147,3 +147,13 @@ class AudioChunk(StrictModel):
     end: float = Field(gt=0)
     sample_rate: int = Field(ge=1)
     samples: list[float]
+
+
+class AudioEvidence(StrictModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+    speech_activity: float = Field(ge=0, le=1)
+    silence_score: float = Field(ge=0, le=1)
+    music_score: float = Field(ge=0, le=1)
+    transition_score: float = Field(ge=0, le=1)
+    evidence_type: str
