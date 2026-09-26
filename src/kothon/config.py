@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
@@ -52,6 +53,7 @@ def load_config(path: Path) -> KothonConfig:
 
 def load_runtime_config() -> KothonConfig:
     """Select explicit, Groq, or fixture configuration for local execution."""
+    load_dotenv()
     configured = os.getenv("KOTHON_CONFIG_PATH")
     if configured:
         return load_config(Path(configured))

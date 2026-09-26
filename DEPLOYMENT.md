@@ -3,6 +3,15 @@
 Kothon can run in fixture mode without credentials, or use Groq for real
 transcription and translation when the environment is configured.
 
+For local development, copy `.env.example` to `.env`, add your Groq key, and
+restart the API. `.env` is ignored by Git and must never be committed:
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env and set GROQ_API_KEY
+uv run uvicorn kothon.api:app --host 127.0.0.1 --port 8000
+```
+
 ```powershell
 docker build -t kothon .
 docker run --rm -p 8000:8000 kothon

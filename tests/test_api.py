@@ -16,7 +16,8 @@ def wav_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def test_health_and_fixture_run_api() -> None:
+def test_health_and_fixture_run_api(monkeypatch) -> None:
+    monkeypatch.setenv("KOTHON_CONFIG_PATH", "config/default.yaml")
     RUNS.clear()
     client = TestClient(create_app())
 
@@ -64,7 +65,7 @@ def test_api_rejects_malformed_media() -> None:
 
 
 def test_fixture_result_reports_fixture_mode(monkeypatch) -> None:
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("KOTHON_CONFIG_PATH", "config/default.yaml")
     RUNS.clear()
     client = TestClient(create_app())
 

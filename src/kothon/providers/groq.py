@@ -42,11 +42,17 @@ class GroqClient:
         client: httpx.Client | None = None,
         base_url: str = "https://api.groq.com/openai",
     ) -> None:
-        self.api_key: str = api_key or os.getenv("GROQ_API_KEY") or ""
-        self.transcription_model: str = (
-            transcription_model or os.getenv("GROQ_TRANSCRIPTION_MODEL") or ""
+        self.api_key: str = (
+            os.getenv("GROQ_API_KEY", "") if api_key is None else api_key
         )
-        self.text_model: str = text_model or os.getenv("GROQ_TEXT_MODEL") or ""
+        self.transcription_model: str = (
+            os.getenv("GROQ_TRANSCRIPTION_MODEL", "")
+            if transcription_model is None
+            else transcription_model
+        )
+        self.text_model: str = (
+            os.getenv("GROQ_TEXT_MODEL", "") if text_model is None else text_model
+        )
         self.base_url = base_url.rstrip("/")
         self.client = client or httpx.Client(timeout=timeout)
         self.max_retries = max_retries
