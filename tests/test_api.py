@@ -24,3 +24,14 @@ def test_health_and_fixture_run_api() -> None:
         "hi": 3,
     }
     assert result["tracks"]["en"][1] == ["He has an office meeting."]
+    events = client.get(f"/api/runs/{run_id}/events")
+    assert events.status_code == 200
+    assert [event["stage"] for event in events.json()] == [
+        "transcription",
+        "segmentation",
+        "verification",
+        "accessibility",
+        "compliance",
+        "translation",
+        "assembly",
+    ]

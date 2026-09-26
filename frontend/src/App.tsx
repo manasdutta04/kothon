@@ -2,6 +2,7 @@ import { ChangeEvent, useState } from "react";
 
 type Track = "bn" | "en" | "hi";
 type QCIssue = { category: string; score: number; severity: string; evidence: string; recommended_action: string };
+type TraceEvent = { stage: string; provider: string; model?: string | null; duration_ms: number; status: string };
 type Report = {
   run_id: string;
   mode?: "groq" | "fixture";
@@ -19,6 +20,7 @@ type Report = {
   }>;
   qc_report?: { review_queue: QCIssue[] };
   tracks?: Record<Track, string[][]>;
+  events?: TraceEvent[];
 };
 
 const API = "http://127.0.0.1:8000/api";
@@ -84,8 +86,9 @@ export function App() {
           <div className="card-label"><span>02</span><span>Evidence ledger</span></div>
           {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage…" : "Your run will appear here as a reviewable record."}</p></div>}
           {report && <>
-            <div className="stat-grid"><Stat label="cues" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="review queue" value={report.qc_report?.review_queue?.length ?? 0} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
-            <div className="run-note"><span className="run-dot" /> {report.mode === "fixture" ? "Fixture run · structure and QC are live; add GROQ_API_KEY for media transcription" : "Live Groq run · provider output preserved for review"}</div>
+    <div className="stat-grid"><Stat label="cues" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="review queue" value={report.qc_report?.review_queue?.length ?? 0} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
+    <div className="run-note"><span className="run-dot" /> {report.mode === "fixture" ? "Fixture run · structure and QC are live; add GROQ_API_KEY for media transcription" : "Live Groq run · provider output preserved for review"}</div>
+    <div className="stage-rail">{(report.events ?? []).map((event) => <div className="stage" key={event.stage}><span className="stage-state">✓</span><span><b>{event.stage}</b><small>{event.provider}{event.model ? ` · ${event.model}` : ""} · {Math.round(event.duration_ms)}ms</small></span></div>)}</div>
             <div className="card-list">{report.cards.map((item, index) => <CueCard key={index} item={item} index={index} tracks={report.tracks} />)}</div>
             <QCQueue issues={report.qc_report?.review_queue ?? []} />
             <div className="downloads"><a href={`${API}/runs/${report.run_id}/files/bengali-vtt`}>Bengali VTT ↗</a><a href={`${API}/runs/${report.run_id}/files/english-srt`}>English SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/hindi-srt`}>Hindi SRT ↗</a><a href={`${API}/runs/${report.run_id}/files/qc-json`}>QC JSON ↗</a></div>

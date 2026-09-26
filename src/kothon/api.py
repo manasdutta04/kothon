@@ -88,7 +88,18 @@ def create_app() -> FastAPI:
             "en": result.english_lines,
             "hi": result.hindi_lines,
         }
+        payload["events"] = [event.model_dump(mode="json") for event in result.trace]
         return payload
+
+    @app.get("/api/runs/{run_id}/events")
+    def get_events(run_id: str) -> list[dict[str, Any]]:
+        run = RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run["status"] != "completed":
+            raise HTTPException(status_code=409, detail=run.get("error", "Run not completed"))
+        result = cast(PipelineResult, run["result"])
+        return [event.model_dump(mode="json") for event in result.trace]
 
     @app.get("/api/runs/{run_id}/files/{file_type}")
     def get_file(run_id: str, file_type: str) -> Response:

@@ -1,6 +1,8 @@
 """Provider-independent Kothon pipeline orchestration."""
 
+from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from kothon.assembly.report import build_report
@@ -13,6 +15,7 @@ from kothon.contracts import (
     QCIssue,
     QCReport,
     SubtitleCard,
+    TraceEvent,
     VerificationRecord,
     Violation,
 )
@@ -81,8 +84,46 @@ def run_pipeline(
         if config.providers.compliance == "groq" and groq is not None
         else FixtureComplianceProvider()
     )
+    trace: list[TraceEvent] = []
+
+    def record_trace(
+        stage: str,
+        provider: str,
+        model: str | None,
+        payload: dict[str, object],
+        started_at: float,
+    ) -> None:
+        trace.append(
+            TraceEvent(
+                event_id=f"trace-{len(trace) + 1:04d}",
+                stage=stage,
+                status="completed",
+                provider=provider,
+                model=model,
+                recorded_at=datetime.now(UTC),
+                duration_ms=(perf_counter() - started_at) * 1000,
+                payload=payload,
+            )
+        )
+
+    transcription_started = perf_counter()
     transcription = transcription_provider.transcribe(media_path, config.language_hint)
+    record_trace(
+        "transcription",
+        config.providers.transcription,
+        config.providers.transcription_model or None,
+        {"segments": transcription.model_dump(mode="json")["segments"]},
+        transcription_started,
+    )
+    segmentation_started = perf_counter()
     proposed = segmentation_provider.segment(transcription, config.subtitle_rules)
+    record_trace(
+        "segmentation",
+        config.providers.segmentation,
+        config.providers.text_model or None,
+        {"cards": [card.model_dump(mode="json") for card in proposed]},
+        segmentation_started,
+    )
     try:
         audio = read_audio(media_path)
         audio_evidence = extract_evidence(audio)
@@ -95,6 +136,7 @@ def run_pipeline(
     translated: dict[str, list[str]] = {"en": [], "hi": []}
     issues: list[QCIssue] = []
 
+    verification_started = perf_counter()
     confidence_by_segment = {
         segment.segment_id: segment.confidence for segment in transcription.segments
     }
@@ -200,6 +242,36 @@ def run_pipeline(
         )
         final_cards.append(final_card)
 
+    record_trace(
+        "verification",
+        config.providers.correction,
+        config.providers.text_model or None,
+        {"cards": [item.model_dump(mode="json") for item in reports]},
+        verification_started,
+    )
+    record_trace(
+        "accessibility",
+        config.providers.tagging,
+        config.providers.text_model or None,
+        {"cards": [item.tagging.model_dump(mode="json") for item in reports if item.tagging]},
+        verification_started,
+    )
+    record_trace(
+        "compliance",
+        config.providers.compliance,
+        config.providers.text_model or None,
+        {"cards": [item.compliance.model_dump(mode="json") for item in reports if item.compliance]},
+        verification_started,
+    )
+    record_trace(
+        "translation",
+        "groq" if groq is not None else "fixture",
+        config.providers.text_model or None,
+        {"english_cues": len(translated["en"]), "hindi_cues": len(translated["hi"])},
+        verification_started,
+    )
+
+    assembly_started = perf_counter()
     report = build_report(run_id or str(uuid4()), config.language_hint, reports)
     speaker_labels = [
         item.tagging.speaker_label if item.tagging else "Speaker 1" for item in reports
@@ -246,6 +318,18 @@ def run_pipeline(
         issues=issues,
         review_queue=sorted(issues, key=lambda item: item.score, reverse=True),
     )
+    record_trace(
+        "assembly",
+        "local",
+        None,
+        {
+            "bengali_cues": len(bengali_cards),
+            "english_cues": len(english_cards),
+            "hindi_cues": len(hindi_cards),
+            "qc_issues": len(issues),
+        },
+        assembly_started,
+    )
     return PipelineResult(
         report=report,
         srt=render_srt(english_cards),
@@ -257,4 +341,5 @@ def run_pipeline(
         english_lines=[[line] for line in translated["en"]],
         hindi_lines=[[line] for line in translated["hi"]],
         qc_report=qc.model_dump(mode="json"),
+        trace=trace,
     )

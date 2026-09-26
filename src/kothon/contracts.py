@@ -1,5 +1,6 @@
 """Typed contracts shared by all pipeline stages."""
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -142,6 +143,7 @@ class PipelineResult(StrictModel):
     english_lines: list[list[str]] = Field(default_factory=list)
     hindi_lines: list[list[str]] = Field(default_factory=list)
     qc_report: dict[str, object] = Field(default_factory=dict)
+    trace: list["TraceEvent"] = Field(default_factory=list)
 
 
 class MediaMetadata(StrictModel):
@@ -211,3 +213,14 @@ class QCIssue(StrictModel):
 class QCReport(StrictModel):
     issues: list[QCIssue]
     review_queue: list[QCIssue]
+
+
+class TraceEvent(StrictModel):
+    event_id: str
+    stage: str
+    status: str
+    provider: str
+    model: str | None = None
+    recorded_at: datetime
+    duration_ms: float = Field(ge=0)
+    payload: dict[str, object] = Field(default_factory=dict)
