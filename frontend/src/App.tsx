@@ -25,16 +25,19 @@ type Report = {
 
 const API = "http://127.0.0.1:8000/api";
 const trackNames: Record<Track, string> = { bn: "বাংলা CC", en: "English", hi: "हिन्दी" };
+const stageNames = ["transcription", "segmentation", "verification", "accessibility", "compliance", "translation", "assembly"];
 
 export function App() {
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [report, setReport] = useState<Report | null>(null);
+  const [liveEvents, setLiveEvents] = useState<TraceEvent[]>([]);
   const [error, setError] = useState("");
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     setFile(event.target.files?.[0] ?? null);
     setReport(null);
+    setLiveEvents([]);
     setError("");
     setState("idle");
   };
@@ -49,11 +52,13 @@ export function App() {
       const created = await fetch(`${API}/runs`, { method: "POST", body });
       if (!created.ok) throw new Error("The API rejected this run.");
       const { run_id: runId } = await created.json();
+      setLiveEvents([]);
       let status = "queued";
       for (let attempt = 0; attempt < 120; attempt += 1) {
         const statusResponse = await fetch(`${API}/runs/${runId}`);
         const statusPayload = await statusResponse.json();
         status = statusPayload.status;
+        setLiveEvents(statusPayload.events ?? []);
         if (status === "completed") break;
         if (status === "failed") throw new Error(statusPayload.error ?? "The pipeline failed.");
         await new Promise((resolve) => window.setTimeout(resolve, 250));
@@ -94,7 +99,7 @@ export function App() {
         </div>
         <div className="evidence-card">
           <div className="card-label"><span>02</span><span>Evidence ledger</span></div>
-          {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage…" : "Your run will appear here as a reviewable record."}</p></div>}
+          {!report && <div className="empty-state"><div className="pulse" /><p>{state === "running" ? "Following the signal through each stage…" : "Your run will appear here as a reviewable record."}</p>{state === "running" && <ProgressRail events={liveEvents} />}</div>}
           {report && <>
     <div className="stat-grid"><Stat label="cues" value={report.summary.total_cards} /><Stat label="corrected" value={report.summary.cards_corrected} /><Stat label="review queue" value={report.qc_report?.review_queue?.length ?? 0} /><Stat label="flags" value={report.summary.cards_with_sensitivity_flags} /></div>
     <div className="run-note"><span className="run-dot" /> {report.mode === "fixture" ? "Fixture run · structure and QC are live; add GROQ_API_KEY for media transcription" : "Live Groq run · provider output preserved for review"}</div>
@@ -111,6 +116,11 @@ export function App() {
 }
 
 function Stat({ label, value }: { label: string; value: number }) { return <div><strong>{value}</strong><span>{label}</span></div>; }
+
+function ProgressRail({ events }: { events: TraceEvent[] }) {
+  const completed = new Map(events.map((event) => [event.stage, event]));
+  return <div className="progress-rail">{stageNames.map((stage, index) => { const event = completed.get(stage); const current = !event && (index === 0 || completed.has(stageNames[index - 1])); return <div className={`progress-step ${event ? "complete" : current ? "current" : "pending"}`} key={stage}><span>{event ? "✓" : current ? "·" : "○"}</span><b>{stage}</b></div>; })}</div>;
+}
 
 function CueCard({ item, index, tracks }: { item: Report["cards"][number]; index: number; tracks?: Record<Track, string[][]> }) {
   return <article className="subtitle-card">
