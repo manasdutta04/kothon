@@ -18,3 +18,5 @@ trace/
 frontend/node_modules/
 frontend/dist/
 *.tsbuildinfo
+.agents/
+skills-lock.json
