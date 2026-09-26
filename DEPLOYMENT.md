@@ -22,6 +22,10 @@ docker run --rm -p 8000:8000 `
   kothon
 ```
 
+For the free tier, start with a short Bengali clip below 25 MB. The default
+models are `whisper-large-v3-turbo` for timestamped ASR and
+`openai/gpt-oss-20b` for structured text stages. Check the provider's model
+permissions if your account does not expose the text model.
+
 The application labels fixture mode explicitly. It must not be presented as
 real ASR accuracy in a hackathon demo.
-

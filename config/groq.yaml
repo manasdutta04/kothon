@@ -13,8 +13,8 @@ providers:
   correction: groq
   tagging: groq
   compliance: groq
-  transcription_model: ""
-  text_model: ""
+  transcription_model: whisper-large-v3-turbo
+  text_model: openai/gpt-oss-20b
 
 runtime:
   max_correction_attempts: 2
@@ -23,4 +23,3 @@ runtime:
 
 output:
   formats: [srt, vtt, json]
-
